@@ -3,5 +3,5 @@ import { RoomService } from '../services/room.service';
 
 @Controller('rooms')
 export class RoomController {
-    constructor(private roomService: RoomService){}
+  constructor(private roomService: RoomService) {}
 }
