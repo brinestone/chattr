@@ -11,7 +11,7 @@ logger.verbose('Initializing Firebase...');
 initializeApp({
   credential: cert(fbCreds as ServiceAccount),
   databaseURL: 'https://chattr-8d770-default-rtdb.firebaseio.com/',
-  databaseAuthVariableOverride: {
+  databaseAuthVariableOverride: { 
     uid: 'backend_api',
   },
 });
