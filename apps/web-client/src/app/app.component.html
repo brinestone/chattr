@@ -1,14 +1,2 @@
-<p-menubar [model]="menu">
-    <ng-template pTemplate="end">
-        <div class="flex gap-2">
-            @switch(userService.isSignedIn()) {
-                @case(false) {
-                    <p-button (onClick)="onSignInButtonClicked()" title="Sign in with Google" icon="pi pi-google" />
-                }
-                @case (true) {
-                    <p-button [text]="true" severity="danger" (onClick)="onSignOutButtonClicked()" title="Sign out" icon="pi pi-lock" />
-                }
-            }
-        </div>
-    </ng-template>
-</p-menubar>
+<router-outlet/>
+<p-toast></p-toast>
