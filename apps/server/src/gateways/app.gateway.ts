@@ -8,10 +8,10 @@ import {
 import { Socket } from 'socket.io';
 import { Ctx } from '../decorators/room.decorator';
 import { AuthGuard } from '../guards/auth.guard';
-import { Room, User } from '../models';
 import { WsExceptionFilter } from '../filters/ws-exception.filter';
 import { RoomGuard } from '../guards/room.guard';
 import { RoomService } from '../services/room.service';
+import { Room, User } from '@chattr/dto';
 
 @WebSocketGateway()
 export class AppGateway {

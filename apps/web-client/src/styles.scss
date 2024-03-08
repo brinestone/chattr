@@ -5,3 +5,7 @@
 @import 'primeng/resources/themes/lara-light-blue/theme.css';
 @import 'primeng/resources/primeng.css';
 @import 'primeicons/primeicons.css';
+
+html,body {
+    @apply m-0 p-0 w-full h-full;
+}

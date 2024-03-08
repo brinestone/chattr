@@ -1,1 +1,30 @@
-<p>rooms-page works!</p>
+<h1>Your Spaces</h1>
+
+<div class="container mx-auto">
+    <p-galleria [value]="rooms()" [circular]="true" [responsiveOptions]="[
+    {
+        breakpoint: '1024px',
+        numVisible: 5
+    },
+    {
+        breakpoint: '768px',
+        numVisible: 3
+    },
+    {
+        breakpoint: '560px',
+        numVisible: 1
+    }
+]">
+        <ng-template pTemplate="item" let-room>
+            <a routerLink="/rooms/{{room.id}}" class="w-[10rem] text-current no-underline visited:text-current hover:bg-gray-700 hover:shadow-md hover:text-white transition-colors m-2 rounded-md p-3 flex flex-col items-center justify-center gap-3">
+                <svg class="rounded-full" width="100" height="100" [data-jdenticon-value]="room.id"></svg>
+                <h2>{{ room.name }}</h2>
+            </a>
+        </ng-template>
+        <ng-template pTemplate="thumbnail" let-room>
+            <div class="bg-gray-400 w-[5rem] flex justify-center items-center py-4">
+                <svg class="rounded-full border" width="30" height="30" [data-jdenticon-value]="room.id"></svg>
+            </div>
+        </ng-template>
+    </p-galleria>
+</div>

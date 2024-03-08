@@ -30,7 +30,10 @@ export class AppComponent implements OnInit {
 
   constructor() {
     effect(() => {
-      if (this.userService.isSignedIn()) return;
+      if (this.userService.isSignedIn()) {
+        this.dialogRef?.close();
+        return;
+      }
       this.openAuthDialog();
     });
   }

@@ -1,37 +1,33 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { App } from 'firebase-admin/app';
-import { Database, getDatabase } from 'firebase-admin/database';
+import { Firestore, getFirestore } from 'firebase-admin/firestore';
 import { createWorker } from 'mediasoup';
 import { Worker } from 'mediasoup/node/lib/types';
 import { cpus } from 'os';
-import { forkJoin, from, generate, map, mergeMap, of } from 'rxjs';
-import { Room, RoomMember } from '../models';
+import { forkJoin, generate, mergeMap, of } from 'rxjs';
+import { RoomMember } from '@chattr/dto';
 
 @Injectable()
 export class RoomService {
     private readonly logger = new Logger(RoomService.name);
     private readonly workers = Array<Worker>(Math.min(5, cpus().length));
     private nextWorkerIndex = -1;
-    private readonly db: Database;
+    private readonly db: Firestore;
 
     constructor(@Inject('FIREBASE') app: App) {
-        this.db = getDatabase(app);
+        this.db = getFirestore(app);
     }
 
     private get nextWorker() {
         return this.workers[(++this.nextWorkerIndex) % this.workers.length];
     }
 
+    getRooms() {
+        this.db.collection('/')
+    }
+
     createRoom(name: string, members: RoomMember[]) {
-        const ref = this.db.ref('/rooms').push();
-        const room = {
-            acceptedMembers: members,
-            id: ref.key,
-            name
-        } as Room;
-        return from(ref.set(room)).pipe(
-            map(() => room)
-        );
+
     }
 
     onApplicationBootstrap() {

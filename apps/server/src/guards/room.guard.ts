@@ -1,3 +1,4 @@
+import { Room, User } from '@chattr/dto';
 import {
     CanActivate,
     ExecutionContext,
@@ -17,7 +18,6 @@ import {
     throwError,
 } from 'rxjs';
 import { Socket } from 'socket.io';
-import { Room, User } from '../models';
 
 @Injectable()
 export class RoomGuard implements CanActivate {
