@@ -7,5 +7,6 @@ export const environment = {
         storageBucket: "chattr-8d770.appspot.com",
         messagingSenderId: "414009952865",
         appId: "1:414009952865:web:50b404a386369f81013820"
-      }
-};
+      },
+    backendOrigin: ''
+} as const;
