@@ -35,7 +35,7 @@ export class RoomService {
             roleMap: {
                 [user.uid]: 'owner'
             },
-            sessions: []
+            sessions: {}
         };
 
         return from(getIdToken(user)).pipe(
@@ -49,7 +49,7 @@ export class RoomService {
 
     joinRoom(id: string, userIdToken: string) {
         return new Observable<RoomEvent>(subscriber => {
-
+            let socketInit = false;
             const socket = io(`${environment.backendOrigin}`, {
                 transports: ['websocket'],
                 query: {
@@ -59,6 +59,7 @@ export class RoomService {
                     authorization: userIdToken
                 }
             });
+            socketInit = true;
             subscriber.add(() => socket.close());
 
             socket.on(id, (json) => {
@@ -70,8 +71,12 @@ export class RoomService {
             });
 
             socket.on('connect', () => {
-                socket.emitWithAck('init_session', [{ roomId: id }, { foo: 'foo', bar: 'bar' },]);
+                socket.emitWithAck('init_session', [{ roomId: id }]);
             });
+
+            socket.on('reconnect', async () => {
+                const response = await socket.emitWithAck('init_session', [{ room: id }]);
+            })
         })
     }
 

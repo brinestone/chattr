@@ -32,12 +32,9 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @UseFilters(new WsExceptionFilter())
   @SubscribeMessage('init_session')
   handleMessage(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() message: any,
     @Ctx('user') user: User,
     @Ctx('room') room: Room
   ) {
-    console.log(message, user, room);
-    return JSON.stringify({ event: 'message', clientId: client.id });
+    return this.roomService.assertSession(room, user);
   }
 }

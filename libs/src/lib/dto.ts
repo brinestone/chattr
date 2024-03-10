@@ -7,33 +7,11 @@ export type User = {
 export type RoomMemberRole = 'member' | 'owner' | 'moderator';
 
 export type RoomMemberSession = {
+  ip: string;
   id: string;
   startDate: number;
   endDate?: number;
   sessionOwner: string;
-  ip: string;
-  mediaChannel: {
-    transportId: string;
-    producers?: {
-      video?: string;
-      audio?: string;
-    };
-  };
-  dataChannel?: {
-    transportId: string;
-    producerId?: string;
-  };
-  consumers?: Record<
-    string,
-    {
-      targetSession: string;
-      channels: {
-        transportId: string;
-        type: 'audio' | 'video' | 'data';
-        consumerId: string;
-      }[];
-    }
-  >;
 };
 
 export type RoomMember = {
@@ -46,6 +24,6 @@ export type Room = {
   id?: string;
   dateCreated?: number;
   members: RoomMember[];
-  sessions: RoomMemberSession[];
+  sessions: Record<string, RoomMemberSession>;
   roleMap: Record<string, RoomMemberRole>;
 };

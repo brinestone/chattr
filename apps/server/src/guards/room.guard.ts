@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { WsException } from '@nestjs/websockets';
 import { App } from 'firebase-admin/app';
-import { getDatabase } from 'firebase-admin/database';
 import { getFirestore } from 'firebase-admin/firestore';
 import {
     EmptyError,
