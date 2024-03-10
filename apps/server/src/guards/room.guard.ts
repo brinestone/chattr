@@ -8,6 +8,7 @@ import {
 import { WsException } from '@nestjs/websockets';
 import { App } from 'firebase-admin/app';
 import { getDatabase } from 'firebase-admin/database';
+import { getFirestore } from 'firebase-admin/firestore';
 import {
     EmptyError,
     catchError,
@@ -27,21 +28,20 @@ export class RoomGuard implements CanActivate {
             .switchToWs()
             .getData<[{ roomId: string }, unknown]>();
         const request = context.switchToWs().getClient<Socket>().request;
-        const user = (context as any)['user'] as User;
+        const user = (request as any)['user'] as User;
         if (!roomArg) throw new WsException(`403 - Room not specified`);
-        const db = getDatabase(this.app);
+        const db = getFirestore();
         const { roomId } = roomArg;
-        return from(db.ref(`/rooms/${roomId}`).get()).pipe(
-            first((snapshot) => snapshot.exists()),
+        return from(db.doc(`/rooms/${roomId}`).get()).pipe(
+            first((snapshot) => snapshot.exists),
             map((snapshot) => {
-                const room = snapshot.val() as Room;
-                room.id = snapshot.key;
+                const room = snapshot.data() as Room;
+                room.id = snapshot.id;
                 return room;
             }),
             first((room) => {
                 return (
-                    !room.bannedMembers.some((uid) => uid === user.uid) &&
-                    !!room.acceptedMembers.find(({ uid }) => uid === user.uid)
+                    room.members.some(member => member.uid == user.uid && !member.isBanned)
                 );
             }),
             catchError((error: Error) =>

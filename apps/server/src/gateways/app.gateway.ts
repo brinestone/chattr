@@ -2,6 +2,8 @@ import { Logger, UseFilters, UseGuards } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
   SubscribeMessage,
   WebSocketGateway,
 } from '@nestjs/websockets';
@@ -13,10 +15,18 @@ import { RoomGuard } from '../guards/room.guard';
 import { RoomService } from '../services/room.service';
 import { Room, User } from '@chattr/dto';
 
-@WebSocketGateway()
-export class AppGateway {
+@WebSocketGateway(undefined, { cors: true })
+export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(AppGateway.name);
   constructor(private roomService: RoomService) { }
+
+  handleConnection(client: Socket, ...args: any[]) {
+    this.logger.log(`${client.id} connected. Args: ${args}`)
+  }
+
+  handleDisconnect(client: Socket) {
+    this.logger.log(`${client.id} disconnected.`);
+  }
 
   @UseGuards(AuthGuard, RoomGuard)
   @UseFilters(new WsExceptionFilter())
@@ -27,7 +37,7 @@ export class AppGateway {
     @Ctx('user') user: User,
     @Ctx('room') room: Room
   ) {
-    console.log(message);
+    console.log(message, user, room);
     return JSON.stringify({ event: 'message', clientId: client.id });
   }
 }

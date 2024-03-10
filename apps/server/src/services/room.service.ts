@@ -1,3 +1,4 @@
+import { Room } from '@chattr/dto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { App } from 'firebase-admin/app';
 import { Firestore, getFirestore } from 'firebase-admin/firestore';
@@ -5,7 +6,6 @@ import { createWorker } from 'mediasoup';
 import { Worker } from 'mediasoup/node/lib/types';
 import { cpus } from 'os';
 import { forkJoin, generate, mergeMap, of } from 'rxjs';
-import { RoomMember } from '@chattr/dto';
 
 @Injectable()
 export class RoomService {
@@ -23,11 +23,14 @@ export class RoomService {
     }
 
     getRooms() {
-        this.db.collection('/')
+        this.db.collection('/');
     }
 
-    createRoom(name: string, members: RoomMember[]) {
-
+    async createRoom(_data: Room) {
+        const collectionRef = this.db.collection('/rooms');
+        const ref = await collectionRef.add({ ..._data, dateCreated: Date.now() } as Room);
+        const snapshot = await ref.get()
+        return snapshot.data();
     }
 
     onApplicationBootstrap() {

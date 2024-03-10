@@ -38,13 +38,14 @@ export type RoomMemberSession = {
 
 export type RoomMember = {
   uid: string;
-  role: RoomMemberRole;
+  isBanned: boolean;
 };
 
 export type Room = {
   name: string;
-  id: string;
-  acceptedMembers: RoomMember[];
-  bannedMembers: string[];
-  sessions: Record<string, RoomMemberSession>;
+  id?: string;
+  dateCreated?: number;
+  members: RoomMember[];
+  sessions: RoomMemberSession[];
+  roleMap: Record<string, RoomMemberRole>;
 };

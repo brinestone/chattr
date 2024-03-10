@@ -1,6 +1,6 @@
-<h1>Your Spaces</h1>
+<h1 class="text-gray-700 text-2lg">Your Spaces</h1>
 
-<div class="container mx-auto">
+<div class="container mx-auto space-y-3">
     <p-galleria [value]="rooms()" [circular]="true" [responsiveOptions]="[
     {
         breakpoint: '1024px',
@@ -16,7 +16,8 @@
     }
 ]">
         <ng-template pTemplate="item" let-room>
-            <a routerLink="/rooms/{{room.id}}" class="w-[10rem] text-current no-underline visited:text-current hover:bg-gray-700 hover:shadow-md hover:text-white transition-colors m-2 rounded-md p-3 flex flex-col items-center justify-center gap-3">
+            <a routerLink="/rooms/{{room.id}}"
+                class="w-[15rem] text-current no-underline visited:text-current bg-gray-200 hover:bg-gray-700 hover:shadow-md hover:text-white transition-colors m-2 rounded-md p-3 flex flex-col items-center justify-center gap-3">
                 <svg class="rounded-full" width="100" height="100" [data-jdenticon-value]="room.id"></svg>
                 <h2>{{ room.name }}</h2>
             </a>
@@ -27,4 +28,38 @@
             </div>
         </ng-template>
     </p-galleria>
+    <div class="w-full flex justify-center">
+        <p-button (onClick)="dialogOpen.set(true)" label="Add a Space" icon="pi pi-plus" />
+    </div>
 </div>
+
+<p-dialog [closable]="false" (onHide)="onNewRoomDialogHide()" [modal]="true" [visible]="dialogOpen()"
+    header="Add a new Space" [breakpoints]="{
+    '768px': '50vw',
+    '640px': '98vw',
+  }">
+    <form (ngSubmit)="onNewRoomFormSubmit()" [formGroup]="form" class="py-5 space-y-7">
+        <div>
+            <span class="p-float-label">
+                <input formControlName="name" pInputText id="name" />
+                <label for="name">Name <span class="text-red-500">*</span></label>
+            </span>
+            @if(form.controls.name.dirty) {
+            @if(form.controls.name.hasError('required')) {
+            <span class="text-red-500 block text-xs">This field is required</span>
+            }
+            }
+        </div>
+        <!-- <div>
+            <span class="p-float-label">
+                <p-autoComplete inputId="invited-members" [multiple]="true" />
+                <label for="invited-members">Members</label>
+            </span>
+        </div> -->
+        <div class="flex justify-center items-center gap-3">
+            <p-button size="small" type="submit" [loading]="isBusy()" loadingIcon="pi pi-spinner pi-spin"
+                [disabled]="form.invalid || isBusy()" label="Continue" icon="pi pi-save" />
+            <p-button size="small" type="button" (onClick)="dialogOpen.set(false)" [text]="true" severity="danger" label="Close" />
+        </div>
+    </form>
+</p-dialog>

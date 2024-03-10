@@ -37,7 +37,8 @@ export class AuthGuard implements CanActivate {
 
     private verifyAuthWs(context: ExecutionContext) {
         const request = context.switchToWs().getClient<Socket>().request;
-        const idToken = request.headers.authorization;
+        const url = new URL(`${request.headers.origin}${request.url}`);
+        const idToken = url.searchParams.get('token');
         return this.doVerification(idToken).pipe(
             combineLatestWith(of(request))
         );
