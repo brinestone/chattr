@@ -1,6 +1,6 @@
 {
   "/server": {
-    "target": "http://localhost:3000",
+    "target": "http://172.18.43.154:3000",
     "secure": false
   }
 }

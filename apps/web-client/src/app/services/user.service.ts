@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { Auth, GoogleAuthProvider, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup, signOut } from '@angular/fire/auth';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { Auth, GoogleAuthProvider, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup, signOut, authState } from '@angular/fire/auth';
 import { FirebaseError } from 'firebase/app';
 import { catchError, from, throwError } from 'rxjs';
 
@@ -8,11 +9,8 @@ import { catchError, from, throwError } from 'rxjs';
 })
 export class UserService {
   private readonly auth = inject(Auth);
-  principal = signal(this.auth.currentUser);
+  principal = toSignal(authState(this.auth));
   isSignedIn = computed(() => !!this.principal());
-  constructor() {
-    this.auth.onAuthStateChanged(this.principal.set);
-  }
 
   initEmailSignIn(email: string, password: string) {
     return from(createUserWithEmailAndPassword(this.auth, email, password)).pipe(

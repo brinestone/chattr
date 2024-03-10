@@ -1,3 +1,4 @@
 :host {
-  display: block;
+  @apply grid w-full h-full bg-gray-700;
+  grid-template-rows: 90% 10%;
 }
