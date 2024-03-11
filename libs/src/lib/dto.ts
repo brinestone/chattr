@@ -12,6 +12,7 @@ export type RoomMemberSession = {
   startDate: number;
   endDate?: number;
   sessionOwner: string;
+  producers: string[]
 };
 
 export type RoomMember = {

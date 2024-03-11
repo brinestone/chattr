@@ -4,9 +4,9 @@ import { randomUUID } from 'crypto';
 import { App } from 'firebase-admin/app';
 import { Firestore, getFirestore } from 'firebase-admin/firestore';
 import { createWorker } from 'mediasoup';
-import { Router, RtpCodecCapability, WebRtcServer, WebRtcTransport, Worker } from 'mediasoup/node/lib/types';
+import { DtlsParameters, MediaKind, Producer, Router, RtpCodecCapability, RtpParameters, WebRtcServer, WebRtcTransport, Worker } from 'mediasoup/node/lib/types';
 import { cpus, networkInterfaces } from 'os';
-import { forkJoin, from, generate, mergeMap, of, switchMap } from 'rxjs';
+import { forkJoin, from, generate, map, mergeMap, of, switchMap, tap, throwError } from 'rxjs';
 
 const ip = networkInterfaces().eth0[0].address;
 
@@ -41,6 +41,7 @@ export class RoomService {
         }
     } = {};
     private readonly webRtcTransports: { [key: string]: WebRtcTransport } = {};
+    private readonly producers: { [key: string]: Producer } = {};
     private nextWorkerIndex = -1;
     private readonly db: Firestore;
 
@@ -122,6 +123,29 @@ export class RoomService {
         this.workers.forEach(worker => worker.close());
     }
 
+    createProducer({ sessionId, rtpParameters, kind }: { rtpParameters: RtpParameters, kind: MediaKind, sessionId: string }, room: Room) {
+        const transport = this.webRtcTransports[sessionId];
+        if (!transport) {
+            return throwError(() => new Error('Transport already closed'));
+        }
+
+        return from(transport.produce({ kind, rtpParameters })).pipe(
+            tap(producer => {
+                this.producers[producer.id] = producer;
+                const session = room.sessions[sessionId];
+                session.producers.push(producer.id);
+            }),
+            map(({ id }) => ({ producerId: id }))
+        );
+    }
+
+    connectTransport({ dtlsParameters, sessionId }: { dtlsParameters: DtlsParameters, sessionId: string }) {
+        let transport = this.webRtcTransports[sessionId];
+        if (!transport) return throwError(() => new Error('Transport already closed'));
+
+        return from(transport.connect({ dtlsParameters }))
+    }
+
     assertSession(room: Room, user: User) {
         let sessionEntry = Object.entries(room.sessions).find(([id, session]) => {
             return session.ip == ip && !!this.webRtcTransports[id];
@@ -135,25 +159,31 @@ export class RoomService {
                 id: sessionId,
                 ip,
                 sessionOwner: user.uid,
-                startDate: Date.now()
+                startDate: Date.now(),
+                producers: []
             };
             room.sessions[currentSession.id] = currentSession;
             from(this.updateRoom(room.id, room)).subscribe({
                 error: (error: Error) => this.logger.error(error.message, error.stack),
-                complete: () => this.logger.verbose(`Room: ${room.id} updated`)
-            }); 
+                complete: () => this.logger.verbose(`Room: ${room.name} updated`)
+            });
         } else {
             this.logger.verbose(`Reusing session: ${currentSession.id}`);
         }
 
         return from(this.assertWebRtcTransport(room.id, currentSession.id)).pipe(
             switchMap(({ id, iceCandidates, iceParameters, dtlsParameters, sctpParameters }) => {
+                const { router } = this.routerWebRtcServerMap[room.id];
                 return of({
-                    id,
-                    iceParameters,
-                    iceCandidates,
-                    dtlsParameters,
-                    sctpParameters
+                    transportParams: {
+                        id,
+                        iceParameters,
+                        iceCandidates,
+                        dtlsParameters,
+                        sctpParameters
+                    },
+                    rtpCapabilities: router.rtpCapabilities,
+                    sessionId: currentSession.id
                 });
             })
         );

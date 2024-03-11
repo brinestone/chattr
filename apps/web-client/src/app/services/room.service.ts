@@ -1,17 +1,26 @@
+import { HttpClient } from "@angular/common/http";
 import { Injectable, inject } from "@angular/core";
 import { Auth, authState } from "@angular/fire/auth";
 import { Firestore, collectionChanges, query, where } from '@angular/fire/firestore';
 import { Room } from "@chattr/dto";
-import { collection } from "firebase/firestore";
-import { Observable, filter, from, identity, map, mergeMap, of, scan, switchMap, tap, throwError, toArray } from "rxjs";
-import { io } from 'socket.io-client';
-import { environment } from "../../environments/environment.development";
-import { HttpClient } from "@angular/common/http";
 import { getIdToken } from "firebase/auth";
+import { collection } from "firebase/firestore";
+import { Device } from "mediasoup-client";
+import { DtlsParameters, MediaKind, RtpParameters, Transport } from "mediasoup-client/lib/types";
+import { filter, from, identity, map, mergeMap, of, scan, switchMap, throwError, toArray } from "rxjs";
+import { Socket, io } from 'socket.io-client';
+import { environment } from "../../environments/environment.development";
 
 export type RoomEvent<T = any> = {
     event: 'error' | 'message';
     data?: T
+}
+
+export type MediaDevice = {
+    type: MediaKind;
+    id: string;
+    name: string;
+    track?: MediaStreamTrack;
 }
 
 @Injectable({
@@ -21,6 +30,21 @@ export class RoomService {
     private readonly db = inject(Firestore);
     private readonly auth = inject(Auth);
     private readonly httpClient = inject(HttpClient);
+    private socket?: Socket;
+    private device: Device = new Device();
+    private sendTransport?: Transport;
+
+    findMediaDevices() {
+        return from(navigator.mediaDevices.enumerateDevices()).pipe(
+            switchMap(identity),
+            filter(device => device.kind == 'audioinput' || device.kind == 'videoinput'),
+            map(({ deviceId, label, kind }) => {
+                debugger;
+                return { id: deviceId, name: label, type: kind == 'audioinput' ? 'audio' : 'video' } as MediaDevice;
+            }),
+            toArray()
+        );
+    }
 
     createRoom(name: string) {
         const user = this.auth.currentUser;
@@ -47,37 +71,49 @@ export class RoomService {
         );
     }
 
-    joinRoom(id: string, userIdToken: string) {
-        return new Observable<RoomEvent>(subscriber => {
-            let socketInit = false;
-            const socket = io(`${environment.backendOrigin}`, {
+    private assertSocket(userIdToken: string) {
+        if (!this.socket) {
+            this.socket = io(`${environment.backendOrigin}`, {
                 transports: ['websocket'],
                 query: {
                     token: userIdToken
-                },
-                extraHeaders: {
-                    authorization: userIdToken
                 }
             });
-            socketInit = true;
-            subscriber.add(() => socket.close());
+        }
+    }
 
-            socket.on(id, (json) => {
-                subscriber.next({ event: 'message', data: JSON.parse(json) });
-            });
-
-            socket.on('errors', (json) => {
-                subscriber.next({ event: 'error', data: JSON.parse(json) });
-            });
-
-            socket.on('connect', () => {
-                socket.emitWithAck('init_session', [{ roomId: id }]);
-            });
-
-            socket.on('reconnect', async () => {
-                const response = await socket.emitWithAck('init_session', [{ room: id }]);
+    joinRoom(id: string, userIdToken: string) {
+        this.assertSocket(userIdToken);
+        return from(this.socket!.emitWithAck('init_session', [{ roomId: id }])).pipe(
+            switchMap(async ({ rtpCapabilities, transportParams, sessionId }) => {
+                await this.device.load({ routerRtpCapabilities: rtpCapabilities });
+                this.sendTransport = this.device.createSendTransport(transportParams);
+                this.sendTransport.on('connect', ({ dtlsParameters }, callback, errBack) => {
+                    this.transportConnectCallback(id, sessionId, dtlsParameters, callback, errBack);
+                });
+                this.sendTransport.on('produce', ({ kind, rtpParameters }, callback: (arg: { id: string }) => void, errBack: (error: Error) => void) => {
+                    this.transportProduceCallback(id, sessionId, kind, rtpParameters, callback, errBack);
+                })
             })
-        })
+        )
+    }
+
+    private async transportProduceCallback(roomId: string, sessionId: string, kind: MediaKind, rtpParameters: RtpParameters, callback: Function, errBack: Function) {
+        try {
+            const { producerId } = await this.socket!.emitWithAck('produce', { roomId }, { kind, sessionId, rtpParameters })
+            callback({ id: producerId });
+        } catch (error) {
+            errBack(error as Error);
+        }
+    }
+
+    private async transportConnectCallback(roomId: string, sessionId: string, dtlsParameters: DtlsParameters, callback: () => void, errBack: (error: Error) => void) {
+        try {
+            await this.socket!.emitWithAck('connect_transport', { roomId }, { dtlsParameters, sessionId });
+            callback();
+        } catch (error) {
+            errBack(error as Error);
+        }
     }
 
     leaveCurrentRoom() {
