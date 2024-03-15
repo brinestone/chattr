@@ -1,234 +1,345 @@
-import { Room, User } from '@chattr/dto';
+import { Room, RoomMember, RoomMemberSession, User } from '@chattr/dto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { randomUUID } from 'crypto';
 import { App } from 'firebase-admin/app';
-import { Firestore, getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, Firestore, getFirestore } from 'firebase-admin/firestore';
 import { createWorker } from 'mediasoup';
-import { DtlsParameters, MediaKind, Producer, Router, RtpCodecCapability, RtpParameters, WebRtcServer, WebRtcTransport, Worker } from 'mediasoup/node/lib/types';
-import { cpus, networkInterfaces } from 'os';
-import { forkJoin, from, generate, map, mergeMap, of, switchMap, tap, throwError } from 'rxjs';
+import {
+  DtlsParameters,
+  MediaKind,
+  Producer,
+  Router,
+  RtpCodecCapability,
+  RtpParameters,
+  WebRtcServer,
+  WebRtcTransport,
+  Worker,
+} from 'mediasoup/node/lib/types';
+import { cpus, networkInterfaces, type } from 'os';
+import {
+  EmptyError,
+  catchError,
+  forkJoin,
+  from,
+  generate,
+  map,
+  mergeMap,
+  of,
+  switchMap,
+  take,
+  tap,
+  throwError,
+  throwIfEmpty,
+} from 'rxjs';
 
-const ip = networkInterfaces().eth0[0].address;
+let ip = '';
+
+if (type() == 'Darwin')
+  ip = networkInterfaces().en0.find((i) => i.family == 'IPv4')!.address;
+else if (type() == 'Linux')
+  ip = networkInterfaces().eth0.find((i) => i.family == 'IPv4')!.address;
 
 const mediaCodecs = [
-    {
-        kind: "audio",
-        mimeType: "audio/opus",
-        clockRate: 48000,
-        channels: 2
+  {
+    kind: 'audio',
+    mimeType: 'audio/opus',
+    clockRate: 48000,
+    channels: 2,
+  },
+  {
+    kind: 'video',
+    mimeType: 'video/H264',
+    clockRate: 90000,
+    parameters: {
+      'packetization-mode': 1,
+      'profile-level-id': '42e01f',
+      'level-asymmetry-allowed': 1,
     },
-    {
-        kind: "video",
-        mimeType: "video/H264",
-        clockRate: 90000,
-        parameters:
-        {
-            "packetization-mode": 1,
-            "profile-level-id": "42e01f",
-            "level-asymmetry-allowed": 1
-        }
-    }
+  },
 ] as RtpCodecCapability[];
 
 @Injectable()
 export class RoomService {
-    private readonly logger = new Logger(RoomService.name);
-    private readonly workers = Array<Worker>(Math.min(5, cpus().length));
-    private readonly routerWebRtcServerMap: {
-        [key: string]: {
-            router: Router,
-            server: WebRtcServer
-        }
-    } = {};
-    private readonly webRtcTransports: { [key: string]: WebRtcTransport } = {};
-    private readonly producers: { [key: string]: Producer } = {};
-    private nextWorkerIndex = -1;
-    private readonly db: Firestore;
+  private readonly logger = new Logger(RoomService.name);
+  private readonly workers = Array<Worker>(Math.min(5, cpus().length));
+  private readonly routerWebRtcServerMap: {
+    [key: string]: {
+      router: Router;
+      server: WebRtcServer;
+    };
+  } = {};
+  private readonly webRtcTransports: { [key: string]: WebRtcTransport } = {};
+  private readonly producers: { [key: string]: Producer } = {};
+  private nextWorkerIndex = -1;
+  private readonly db: Firestore;
 
-    constructor(@Inject('FIREBASE') app: App) {
-        this.db = getFirestore(app);
-    }
+  constructor(@Inject('FIREBASE') app: App) {
+    this.db = getFirestore(app);
+  }
 
-    private get nextWorker() {
-        return this.workers[(++this.nextWorkerIndex) % this.workers.length];
-    }
+  private get nextWorker() {
+    return this.workers[++this.nextWorkerIndex % this.workers.length];
+  }
 
-    getRooms() {
-        this.db.collection('/');
-    }
+  getRooms() {
+    this.db.collection('/');
+  }
 
-    async createRoom(_data: Room) {
-        const collectionRef = this.db.collection('/rooms');
-        const ref = await collectionRef.add({ ..._data, dateCreated: Date.now() } as Room);
-        const snapshot = await ref.get()
-        return snapshot.data();
-    }
+  async createRoom(name: string, ownerRef: string) {
+    const roomRef = this.db.collection('/rooms').doc();
+    await roomRef.set({
+      name,
+      memberUids: [ownerRef],
+      dateCreated: Date.now(),
+    } as Room);
 
-    onApplicationBootstrap() {
-        this.logger.verbose('Starting workers...');
-        generate(0, x => x < this.workers.length, n => n + 1).pipe(
-            mergeMap((index) => forkJoin([
-                createWorker({
-                    logLevel: 'debug',
-                    rtcMaxPort: 50000,
-                    rtcMinPort: 40000
-                }),
-                of(index)
-            ]))
-        ).subscribe({
-            next: ([worker, index]) => {
-                this.logger.verbose(`worker::${worker.pid}::create`);
-                this.workers[index] = worker;
+    const memberRef = this.db
+      .collection(`rooms/${roomRef.id}/members`)
+      .doc(ownerRef);
+    await memberRef.set({
+      uid: ownerRef,
+      isBanned: false,
+      role: 'owner',
+    } as RoomMember);
+    return await roomRef.get();
+  }
 
-                worker.observer.on('newwebrtcserver', server => {
-                    this.logger.verbose(`New WebRTC server::${server.id} on worker::${worker.pid}`);
-                    server.observer.on('close', () => {
-                        this.logger.verbose(`WebRTC server::${server.id} closed on worker::${worker.pid}`);
-                    });
-                });
-
-                worker.observer.on('newrouter', router => {
-                    this.logger.verbose(`New router::${router.id} on worker::${worker.pid}`);
-
-                    router.observer.on('newtransport', transport => {
-                        this.logger.verbose(`New transport::${transport.id} on router::${router.id}`);
-
-                        transport.observer.on('close', () => {
-                            this.logger.verbose(`Transport::${transport.id} closed on router::${router.id}`);
-                        });
-
-                        transport.observer.on('newproducer', producer => {
-                            this.logger.verbose(`New Producer::${producer.id} on transport::${transport.id}`)
-                        });
-
-                        transport.observer.on('newconsumer', consumer => {
-                            this.logger.verbose(`New Consumer::${consumer.id} on transport::${transport.id}`);
-                        });
-                    });
-
-                    router.observer.on('close', () => {
-                        this.logger.verbose(`Router::${router.id} closed on worker:${worker.pid}`);
-                    })
-                })
-            },
-            complete: () => this.logger.verbose(`${this.workers.length} workers started successfully`),
-            error: (error: Error) => {
-                this.logger.error(error.message, error.stack);
-            }
-        });
-    }
-
-    beforeApplicationShutdown() {
-        this.logger.verbose('Shutting down workers...');
-        this.workers.forEach(worker => worker.close());
-    }
-
-    createProducer({ sessionId, rtpParameters, kind }: { rtpParameters: RtpParameters, kind: MediaKind, sessionId: string }, room: Room) {
-        const transport = this.webRtcTransports[sessionId];
-        if (!transport) {
-            return throwError(() => new Error('Transport already closed'));
-        }
-
-        return from(transport.produce({ kind, rtpParameters })).pipe(
-            tap(producer => {
-                this.producers[producer.id] = producer;
-                const session = room.sessions[sessionId];
-                session.producers.push(producer.id);
+  onApplicationBootstrap() {
+    this.logger.verbose('Starting workers...');
+    generate(
+      0,
+      (x) => x < this.workers.length,
+      (n) => n + 1
+    )
+      .pipe(
+        mergeMap((index) =>
+          forkJoin([
+            createWorker({
+              logLevel: 'debug',
+              rtcMaxPort: 50000,
+              rtcMinPort: 40000,
             }),
-            map(({ id }) => ({ producerId: id }))
-        );
-    }
+            of(index),
+          ])
+        )
+      )
+      .subscribe({
+        next: ([worker, index]) => {
+          this.logger.verbose(`worker::${worker.pid}::create`);
+          this.workers[index] = worker;
 
-    connectTransport({ dtlsParameters, sessionId }: { dtlsParameters: DtlsParameters, sessionId: string }) {
-        let transport = this.webRtcTransports[sessionId];
-        if (!transport) return throwError(() => new Error('Transport already closed'));
-
-        return from(transport.connect({ dtlsParameters }))
-    }
-
-    assertSession(room: Room, user: User) {
-        let sessionEntry = Object.entries(room.sessions).find(([id, session]) => {
-            return session.ip == ip && !!this.webRtcTransports[id];
-        });
-        let currentSession = sessionEntry?.[1];
-
-        if (!sessionEntry) {
-            const sessionId = randomUUID();
-            this.logger.verbose(`Session timed out. Creating new session ${sessionId}`);
-            currentSession = {
-                id: sessionId,
-                ip,
-                sessionOwner: user.uid,
-                startDate: Date.now(),
-                producers: []
-            };
-            room.sessions[currentSession.id] = currentSession;
-            from(this.updateRoom(room.id, room)).subscribe({
-                error: (error: Error) => this.logger.error(error.message, error.stack),
-                complete: () => this.logger.verbose(`Room: ${room.name} updated`)
+          worker.observer.on('newwebrtcserver', (server) => {
+            this.logger.verbose(
+              `New WebRTC server::${server.id} on worker::${worker.pid}`
+            );
+            server.observer.on('close', () => {
+              this.logger.verbose(
+                `WebRTC server::${server.id} closed on worker::${worker.pid}`
+              );
             });
-        } else {
-            this.logger.verbose(`Reusing session: ${currentSession.id}`);
-        }
+          });
 
-        return from(this.assertWebRtcTransport(room.id, currentSession.id)).pipe(
-            switchMap(({ id, iceCandidates, iceParameters, dtlsParameters, sctpParameters }) => {
-                const { router } = this.routerWebRtcServerMap[room.id];
-                return of({
-                    transportParams: {
-                        id,
-                        iceParameters,
-                        iceCandidates,
-                        dtlsParameters,
-                        sctpParameters
-                    },
-                    rtpCapabilities: router.rtpCapabilities,
-                    sessionId: currentSession.id
-                });
-            })
-        );
-    }
+          worker.observer.on('newrouter', (router) => {
+            this.logger.verbose(
+              `New router::${router.id} on worker::${worker.pid}`
+            );
 
-    private async updateRoom(id: string, update: Room) {
-        const ref = this.db.doc(`/rooms/${id}`);
-        return await ref.update(update);
-    }
+            router.observer.on('newtransport', (transport) => {
+              this.logger.verbose(
+                `New transport::${transport.id} on router::${router.id}`
+              );
 
-    private async assertWebRtcTransport(routerMapId: string, id: string) {
-        let transport = this.webRtcTransports[id];
+              transport.observer.on('close', () => {
+                this.logger.verbose(
+                  `Transport::${transport.id} closed on router::${router.id}`
+                );
+              });
 
-        if (!transport) {
-            let entry = this.routerWebRtcServerMap[routerMapId];
-            if (!entry) {
-                await this.assertRouter(routerMapId);
-                entry = this.routerWebRtcServerMap[routerMapId];
-            }
-            const { router, server } = entry;
-            transport = await router.createWebRtcTransport({ webRtcServer: server, enableUdp: true });
-            this.webRtcTransports[id] = transport;
-        }
+              transport.observer.on('newproducer', (producer) => {
+                this.logger.verbose(
+                  `New Producer::${producer.id} on transport::${transport.id}`
+                );
+              });
 
-        return transport;
-    }
-
-    private async assertRouter(id: string) {
-        let entry = this.routerWebRtcServerMap[id];
-        if (!entry) {
-            const worker = this.nextWorker;
-            const router = await worker.createRouter({
-                mediaCodecs
+              transport.observer.on('newconsumer', (consumer) => {
+                this.logger.verbose(
+                  `New Consumer::${consumer.id} on transport::${transport.id}`
+                );
+              });
             });
-            const server = await worker.createWebRtcServer({
-                listenInfos: [
-                    {
-                        ip,
-                        protocol: 'udp'
-                    }
-                ]
+
+            router.observer.on('close', () => {
+              this.logger.verbose(
+                `Router::${router.id} closed on worker:${worker.pid}`
+              );
             });
-            entry = this.routerWebRtcServerMap[id] = { router, server };
-        }
-        return entry.router;
+          });
+        },
+        complete: () =>
+          this.logger.verbose(
+            `${this.workers.length} workers started successfully`
+          ),
+        error: (error: Error) => {
+          this.logger.error(error.message, error.stack);
+        },
+      });
+  }
+
+  beforeApplicationShutdown() {
+    this.logger.verbose('Shutting down workers...');
+    this.workers.forEach((worker) => worker.close());
+  }
+
+  createProducer(
+    {
+      sessionId,
+      rtpParameters,
+      kind,
+    }: { rtpParameters: RtpParameters; kind: MediaKind; sessionId: string },
+    room: Room
+  ) {
+    const transport = this.webRtcTransports[sessionId];
+    if (!transport) {
+      return throwError(() => new Error('Transport already closed'));
     }
 
+    return from(transport.produce({ kind, rtpParameters })).pipe(
+      tap((producer) => {
+        this.producers[producer.id] = producer;
+        this.db
+          .doc(`rooms/${room.ref}/sessions/${sessionId}`)
+          .update({
+            producers: FieldValue.arrayUnion(producer.id),
+          })
+          .then(() => this.logger.verbose(`Session: ${sessionId} updated`));
+      }),
+      map(({ id }) => ({ producerId: id }))
+    );
+  }
+
+  connectTransport({
+    dtlsParameters,
+    sessionId,
+  }: {
+    dtlsParameters: DtlsParameters;
+    sessionId: string;
+  }) {
+    const transport = this.webRtcTransports[sessionId];
+    if (!transport)
+      return throwError(() => new Error('Transport already closed'));
+    return from(transport.connect({ dtlsParameters }));
+  }
+
+  assertSession(room: Room, user: User, clientIp: string) {
+    return from(
+      this.db
+        .collection(`rooms/${room.ref}/sessions`)
+        .where('serverIp', '==', ip)
+        .where('sessionOwner', '==', user.uid)
+        .where('endDate', '==', null)
+        .orderBy('startDate', 'desc')
+        .limit(1)
+        .get()
+    ).pipe(
+      mergeMap((snapshot) => {
+        return snapshot.docs;
+      }),
+      throwIfEmpty(),
+      map((snapshot) => snapshot.data() as RoomMemberSession),
+      tap((session) => this.logger.verbose(`Reusing session: ${session.id}.`)),
+      catchError((error: Error) => {
+        if (error instanceof EmptyError) {
+          return of(
+            this.db.collection(`rooms/${room.ref}/sessions`).doc()
+          ).pipe(
+            tap((ref) =>
+              this.logger.verbose(
+                `Sessions timed out. Creating new Session: ${ref.id}`
+              )
+            ),
+            switchMap((ref) =>
+              from(
+                ref.set({
+                  clientIp,
+                  serverIp: ip,
+                  id: ref.id,
+                  producers: [],
+                  sessionOwner: user.uid,
+                  startDate: Date.now(),
+                } as RoomMemberSession)
+              ).pipe(
+                switchMap(() => ref.get()),
+                map((doc) => doc.data() as RoomMemberSession)
+              )
+            )
+          );
+        }
+        return throwError(() => error);
+      }),
+      switchMap((session) => {
+        return forkJoin([
+          this.assertWebRtcTransport(room.ref, session.id),
+          of(session),
+        ]);
+      }),
+      map(
+        ([
+          { id, iceCandidates, iceParameters, dtlsParameters, sctpParameters },
+          session,
+        ]) => {
+          const { router } = this.routerWebRtcServerMap[room.ref];
+          return {
+            transportParams: {
+              id,
+              iceParameters,
+              iceCandidates,
+              dtlsParameters,
+              sctpParameters,
+            },
+            rtpCapabilities: router.rtpCapabilities,
+            sessionId: session.id,
+          };
+        }
+      )
+    );
+  }
+
+  private async assertWebRtcTransport(routerMapId: string, id: string) {
+    let transport = this.webRtcTransports[id];
+
+    if (!transport) {
+      let entry = this.routerWebRtcServerMap[routerMapId];
+      if (!entry) {
+        await this.assertRouter(routerMapId);
+        entry = this.routerWebRtcServerMap[routerMapId];
+      }
+      const { router, server } = entry;
+      transport = await router.createWebRtcTransport({
+        webRtcServer: server,
+        enableUdp: true,
+      });
+      this.webRtcTransports[id] = transport;
+    }
+
+    return transport;
+  }
+
+  private async assertRouter(id: string) {
+    let entry = this.routerWebRtcServerMap[id];
+    if (!entry) {
+      const worker = this.nextWorker;
+      const router = await worker.createRouter({
+        mediaCodecs,
+      });
+      const server = await worker.createWebRtcServer({
+        listenInfos: [
+          {
+            ip,
+            protocol: 'udp',
+          },
+        ],
+      });
+      entry = this.routerWebRtcServerMap[id] = { router, server };
+    }
+    return entry.router;
+  }
 }

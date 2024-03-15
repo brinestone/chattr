@@ -1,15 +1,16 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
-import { RoomService } from '../services/room.service';
+import { User } from '@chattr/dto';
+import { Body, Controller, Ip, Post, UseGuards } from '@nestjs/common';
+import { Ctx } from '../decorators/room.decorator';
 import { AuthGuard } from '../guards/auth.guard';
-import { Room } from '@chattr/dto';
+import { RoomService } from '../services/room.service';
 
 @Controller('rooms')
 export class RoomController {
-  constructor(private roomService: RoomService) { }
+  constructor(private roomService: RoomService) {}
 
   @Post()
   @UseGuards(AuthGuard)
-  createRoom(@Body() obj: Room) {
-    return this.roomService.createRoom(obj);
+  createRoom(@Body() { name }: { name: string }, @Ctx('user') { uid }: User) {
+    return this.roomService.createRoom(name, uid as string);
   }
 }

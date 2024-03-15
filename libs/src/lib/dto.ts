@@ -7,24 +7,24 @@ export type User = {
 export type RoomMemberRole = 'member' | 'owner' | 'moderator';
 
 export type RoomMemberSession = {
-  ip: string;
+  serverIp: string;
+  clientIp: string;
   id: string;
   startDate: number;
   endDate?: number;
   sessionOwner: string;
-  producers: string[]
+  producers: string[];
 };
 
 export type RoomMember = {
   uid: string;
   isBanned: boolean;
+  role: string;
 };
 
 export type Room = {
   name: string;
-  id?: string;
+  ref?: string;
+  memberUids: string[];
   dateCreated?: number;
-  members: RoomMember[];
-  sessions: Record<string, RoomMemberSession>;
-  roleMap: Record<string, RoomMemberRole>;
 };

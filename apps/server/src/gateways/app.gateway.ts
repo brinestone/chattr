@@ -1,5 +1,5 @@
 import { Room, User } from '@chattr/dto';
-import { Logger, UseFilters, UseGuards } from '@nestjs/common';
+import { Ip, Logger, UseFilters, UseGuards } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -8,11 +8,15 @@ import {
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
-  WsException
+  WsException,
 } from '@nestjs/websockets';
-import { DtlsParameters, MediaKind, RtpParameters } from 'mediasoup/node/lib/types';
+import {
+  DtlsParameters,
+  MediaKind,
+  RtpParameters,
+} from 'mediasoup/node/lib/types';
 import { catchError, tap, throwError } from 'rxjs';
-import { Server, Socket } from 'socket.io';
+import { Socket } from 'socket.io';
 import { Ctx } from '../decorators/room.decorator';
 import { WsExceptionFilter } from '../filters/ws-exception.filter';
 import { AuthGuard } from '../guards/auth.guard';
@@ -20,19 +24,16 @@ import { RoomGuard } from '../guards/room.guard';
 import { RoomService } from '../services/room.service';
 
 function getRoomChannel(room: Room) {
-  return `rooms:${room.id}`;
+  return `rooms:${room.ref}`;
 }
 
 @WebSocketGateway(undefined, { cors: true })
 export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(AppGateway.name);
-  constructor(private roomService: RoomService) { }
-
-  @WebSocketServer()
-  private server: Server;
+  constructor(private roomService: RoomService) {}
 
   handleConnection(client: Socket, ...args: any[]) {
-    this.logger.log(`${client.id} connected. Args: ${args}`)
+    this.logger.log(`${client.id} connected. Args: ${args}`);
   }
 
   handleDisconnect(client: Socket) {
@@ -47,32 +48,38 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @Ctx('user') user: User,
     @Ctx('room') room: Room
   ) {
-    return this.roomService.assertSession(room, user).pipe(
+    const clientIp = socket.request.socket.remoteAddress;
+    return this.roomService.assertSession(room, user, clientIp).pipe(
       catchError((error: Error) => throwError(() => new WsException(error))),
       tap(() => {
         const channel = getRoomChannel(room);
         socket.join(channel);
-        this.logger.verbose(`User: ${user.email} has joined the room: ${room.name}`); 
+        this.logger.verbose(
+          `User: ${user.email} has joined the room: ${room.name}`
+        );
       })
     );
-  } 
+  }
 
   @UseGuards(AuthGuard, RoomGuard)
   @UseFilters(new WsExceptionFilter())
   @SubscribeMessage('connect_transport')
   handleConnectTransport(
-    @MessageBody() data: { dtlsParameters: DtlsParameters, sessionId: string }
+    @MessageBody() data: { dtlsParameters: DtlsParameters; sessionId: string }
   ) {
-    return this.roomService.connectTransport(data).pipe(
-      catchError((error: Error) => throwError(() => new WsException(error)))
-    );
+    return this.roomService
+      .connectTransport(data)
+      .pipe(
+        catchError((error: Error) => throwError(() => new WsException(error)))
+      );
   }
 
   @UseGuards(AuthGuard, RoomGuard)
   @UseFilters(new WsExceptionFilter())
   @SubscribeMessage('produce')
   handleProduce(
-    @MessageBody() data: { rtpParameters: RtpParameters, kind: MediaKind, sessionId: string },
+    @MessageBody()
+    data: { rtpParameters: RtpParameters; kind: MediaKind; sessionId: string },
     @Ctx('room') room: Room,
     @ConnectedSocket() socket: Socket
   ) {
