@@ -8,6 +8,7 @@ export interface Entity {
 export interface User extends Entity {
   email: string;
   avatar?: string;
+  name: string;
 }
 
 export type RoomMemberRole = 'member' | 'owner' | 'moderator';
@@ -33,6 +34,13 @@ export interface Room extends Entity {
 }
 
 export interface ILoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface ISignupRequest {
+  name: string;
+  avatar?: string;
   email: string;
   password: string;
 }

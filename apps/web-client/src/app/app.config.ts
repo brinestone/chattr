@@ -14,14 +14,15 @@ import { provideFirestore } from '@angular/fire/firestore';
 import { provideAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, withViewTransitions } from '@angular/router';
 import { setPersistence } from '@firebase/auth';
+import { NgxsReduxDevtoolsPluginModule } from '@ngxs/devtools-plugin';
+import { NgxsLoggerPluginModule } from '@ngxs/logger-plugin';
+import { NgxsStoragePluginModule, StorageOption } from '@ngxs/storage-plugin';
+import { NgxsModule } from '@ngxs/store';
 import { getFirestore } from 'firebase/firestore';
 import { environment } from '../environments/environment.development';
 import { appRoutes } from './app.routes';
-import { NgxsModule } from '@ngxs/store';
-import { NgxsStoragePluginModule, StorageOption } from '@ngxs/storage-plugin';
-import { NgxsLoggerPluginModule } from '@ngxs/logger-plugin';
-import { NgxsReduxDevtoolsPluginModule } from '@ngxs/devtools-plugin';
-import { AppState } from './state';
+import { DevicesState } from './state/devices.state';
+import { UserState } from './state/user.state';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -29,7 +30,7 @@ export const appConfig: ApplicationConfig = {
     provideAnimations(),
     provideHttpClient(),
     importProvidersFrom([
-      NgxsModule.forRoot([AppState]),
+      NgxsModule.forRoot([DevicesState, UserState]),
       NgxsLoggerPluginModule.forRoot({ disabled: !isDevMode() }),
       NgxsStoragePluginModule.forRoot({
         storage: StorageOption.LocalStorage

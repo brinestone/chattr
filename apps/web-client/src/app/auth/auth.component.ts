@@ -1,16 +1,18 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
-import { MessageService } from 'primeng/api';
+import { Actions, Store } from '@ngxs/store';
 import { ButtonModule } from 'primeng/button';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { PasswordModule } from 'primeng/password';
 import { ToastModule } from 'primeng/toast';
-import { UserService } from '../services/user.service';
+import { SignIn } from '../actions';
+import { errorToMessage, monitorAction } from '../util';
+import { MessageService } from 'primeng/api';
 
 @Component({
-  selector: 'chattr-auth-',
+  selector: 'chattr-auth',
   standalone: true,
   imports: [CommonModule, FormsModule, ReactiveFormsModule, InputTextModule, PasswordModule, ButtonModule, ToastModule],
   template: `
@@ -21,10 +23,8 @@ import { UserService } from '../services/user.service';
         <i class="pi pi-info-circle"></i> error message
       </span> -->
         <div>
-          <span class="p-float-label block w-full">
-            <input formControlName="email" class="inline-block w-full p-inputtext-sm" autocomplete="current-username" type="email" id="email" pInputText>
-            <label for="email">Email</label>
-          </span>
+          <label for="email">Email</label>
+          <input formControlName="email" class="inline-block w-full p-inputtext-sm" autocomplete="current-username" type="email" id="email" pInputText>
           @if(form.controls.email.invalid && form.controls.email.dirty) {
             @if(form.controls.email.hasError('required')) {
               <span class="block text-red-500 text-xs">
@@ -34,10 +34,8 @@ import { UserService } from '../services/user.service';
           }
         </div>
         <div id="pass-panel w-full">
-          <span class="p-float-label block w-full">
-            <input class="p-inputtext-sm inline-block w-full" formControlName="password" type="password" pPassword autocomplete="current-password" inputId="password"/>
-            <label for="password">Password</label>
-          </span>
+          <label for="password">Password</label>
+          <input class="p-inputtext-sm inline-block w-full" formControlName="password" type="password" pPassword autocomplete="current-password" id="password"/>
           @if(form.controls.password.invalid && form.controls.password.dirty) {
             @if(form.controls.password.hasError('required')) {
               <span class="block text-red-500 text-xs">
@@ -47,12 +45,7 @@ import { UserService } from '../services/user.service';
           }
         </div>
         <div class="w-full flex justify-center">
-          <p-button size="small" loadingIcon="pi pi-spinner pi-spin" [loading]="isBusy() && !googleSignIn()" [disabled]="isBusy() || form.invalid" type="submit" label="Continue with Email"/>
-        </div>
-        <br/>
-        <br/>
-        <div class="flex justify-center">
-          <p-button (onClick)="onContinueWithGoogleButtonClicked()" [loading]="isBusy() && googleSignIn()" size="small" loadingIcon="pi pi-spinner pi-spin" type="button" [disabled]="isBusy()" icon="pi pi-google" label="Continue with Google"></p-button>
+          <p-button size="small" loadingIcon="pi pi-spinner pi-spin" [loading]="isBusy() ?? false" [disabled]="isBusy() || form.invalid" type="submit" label="Continue with Email"/>
         </div>
       </form>
     </div>
@@ -64,54 +57,23 @@ import { UserService } from '../services/user.service';
   `
 })
 export class AuthComponent {
+  private readonly actions = inject(Actions);
+  private readonly store = inject(Store);
+  private readonly messageService = inject(MessageService);
+
   form = new FormGroup({
     email: new FormControl<string>('', { validators: [Validators.required] }),
     password: new FormControl<string>('', { validators: [Validators.required] })
   });
 
-  isBusy = signal(false);
-  googleSignIn = signal(false);
-  errorMessage = signal('');
-  private readonly userService = inject(UserService);
-  private readonly dialogRef = inject(DynamicDialogRef);
-  private readonly messageService = inject(MessageService);
-
-  onContinueWithGoogleButtonClicked() {
-    this.isBusy.set(true);
-    this.googleSignIn.set(true);
-    this.userService.initGoogleSignIn().subscribe({
-      error: (error: Error) => {
-        this.messageService.add({
-          summary: 'Error',
-          detail: error.message,
-          severity: 'error'
-        });
-        this.isBusy.set(false);
-      },
-      complete: () => {
-        this.isBusy.set(false);
-        this.dialogRef.close();
-      }
-    })
-  }
+  readonly isBusy = toSignal<boolean>(monitorAction<boolean>(this.actions, SignIn, () => true, () => false))
 
   onFormSubmit() {
-    this.isBusy.set(true);
-    this.googleSignIn.set(false);
     const { email, password } = this.form.value;
-    this.userService.initEmailSignIn(String(email), String(password)).subscribe({
+    this.store.dispatch(new SignIn(String(email), String(password))).subscribe({
       error: (error: Error) => {
-        this.messageService.add({
-          summary: 'Error',
-          detail: error.message,
-          severity: 'error'
-        });
-        this.isBusy.set(false);
-      },
-      complete: () => {
-        this.isBusy.set(false);
-        this.dialogRef.close();
+        this.messageService.add(errorToMessage(error));
       }
-    });
+    })
   }
 }

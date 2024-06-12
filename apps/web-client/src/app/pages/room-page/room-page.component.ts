@@ -31,7 +31,7 @@ import {
 } from 'rxjs';
 import { SaveDeviceConfig, SetAudioDevice, SetVideoDevice } from '../../actions';
 import { MediaDevice, RoomService } from '../../services/room.service';
-import { AppStateModel } from '../../state';
+import { DeviceStateModel } from '../../state/devices.state';
 
 @Component({
   selector: 'chattr-room-page',
@@ -52,7 +52,7 @@ import { AppStateModel } from '../../state';
   styleUrl: './room-page.component.scss',
 })
 export class RoomPageComponent implements OnInit {
-  @Select() appConfig$!: Observable<AppStateModel>;
+  @Select() appConfig$!: Observable<DeviceStateModel>;
   @ViewChild('previewVideo', { static: true })
   private previewVideo!: ElementRef<HTMLVideoElement>;
   private readonly roomId = inject(ActivatedRoute).snapshot.paramMap.get('id');

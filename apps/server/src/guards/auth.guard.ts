@@ -21,7 +21,7 @@ import {
   throwError,
 } from 'rxjs';
 import { Socket } from 'socket.io';
-import { UserEntity } from '../models';
+import { AppSession, UserEntity } from '../models';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -46,7 +46,7 @@ export class AuthGuard implements CanActivate {
 
   private verifyAuthHttp(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<Request>();
-    const idToken = request.headers.authorization;
+    const idToken = (request.session as AppSession).userId;
     return this.doVerification(idToken).pipe(combineLatestWith(of(request)));
   }
 

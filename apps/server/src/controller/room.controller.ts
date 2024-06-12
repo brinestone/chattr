@@ -11,10 +11,10 @@ export class RoomController {
 
   @Post()
   @UseGuards(AuthGuard)
-  createRoom(
+  async createRoom(
     @Body() { name }: { name: string },
     @Ctx('user') { id }: HydratedDocument<User>
   ) {
-    return this.roomService.createRoom(name, id);
+    return await this.roomService.createRoom(name, id);
   }
 }

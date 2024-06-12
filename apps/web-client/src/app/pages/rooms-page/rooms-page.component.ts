@@ -21,9 +21,11 @@ import { NgxJdenticonModule } from 'ngx-jdenticon';
 import { MessageService } from 'primeng/api';
 import { AutoCompleteModule } from 'primeng/autocomplete';
 import { ButtonModule } from 'primeng/button';
-import { DialogModule, Dialog } from 'primeng/dialog';
+import { Dialog, DialogModule } from 'primeng/dialog';
+import { DialogService } from 'primeng/dynamicdialog';
 import { GalleriaModule } from 'primeng/galleria';
 import { InputTextModule } from 'primeng/inputtext';
+import { AuthComponent } from '../../auth/auth.component';
 import { RoomService } from '../../services/room.service';
 
 @Component({
@@ -39,6 +41,7 @@ import { RoomService } from '../../services/room.service';
     InputTextModule,
     FormsModule,
     ReactiveFormsModule,
+    AuthComponent,
     AutoCompleteModule,
   ],
   templateUrl: './rooms-page.component.html',
@@ -54,8 +57,9 @@ export class RoomsPageComponent implements OnInit {
     name: new FormControl<string>('', { validators: [Validators.required] }),
   });
   readonly isBusy = signal(false);
-  readonly dialogOpen = signal(false);
-
+  readonly openNewRoomDialog = signal(false);
+  readonly openAuthDialog = signal(true);
+  
   ngOnInit(): void {
     // this.isBusy.set(true);
     this.roomService
@@ -86,7 +90,7 @@ export class RoomsPageComponent implements OnInit {
           detail: 'Room created successfully',
         });
         this.isBusy.set(false);
-        this.dialogOpen.set(false);
+        this.openNewRoomDialog.set(false);
       },
     });
   }

@@ -1,5 +1,5 @@
-import { ILoginRequest } from "@chattr/interfaces";
-import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
+import { ILoginRequest, ISignupRequest } from "@chattr/interfaces";
+import { IsEmail, IsNotEmpty, IsOptional, IsString, IsStrongPassword, IsUrl } from 'class-validator';
 
 export class LoginRequest implements ILoginRequest {
   @IsNotEmpty()
@@ -8,8 +8,23 @@ export class LoginRequest implements ILoginRequest {
   email = '';
 
   @IsNotEmpty()
-  @IsEmail()
   @IsString()
   password = '';
+}
 
+export class SignUpRequest implements ISignupRequest {
+  @IsOptional()
+  @IsUrl()
+  avatar?: string | undefined;
+
+  @IsNotEmpty()
+  @IsEmail()
+  email = '';
+
+  @IsNotEmpty()
+  @IsString()
+  name = '';
+
+  @IsStrongPassword({ minLength: 6 })
+  password = '';
 }

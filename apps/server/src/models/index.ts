@@ -9,7 +9,8 @@ import {
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Exclude, Expose, Transform, Type } from 'class-transformer';
 import { HydratedDocument, Schema as MongooseSchema } from 'mongoose';
-import {} from 'connect-mongo';
+import MongoStore, { } from 'connect-mongo';
+import { Session, SessionData } from 'express-session';
 
 export type UserDocument = HydratedDocument<User>;
 export type RoomMemberDocument = HydratedDocument<RoomMember>;
@@ -35,6 +36,8 @@ export class UserEntity extends BaseEntity implements User {
   @Prop({ required: true })
   @Exclude()
   passwordHash: string;
+  @Prop({ required: true })
+  name: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(UserEntity).pre(
@@ -165,7 +168,7 @@ export const RoomSessionSchema = SchemaFactory.createForClass(
 });
 
 @Schema({ timestamps: true })
-export class UserSession extends BaseEntity implements ISession{
+export class UserSession extends BaseEntity {
   @Prop({ required: true, unique: true })
   token: string;
   @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: UserEntity.name })
@@ -176,3 +179,11 @@ export const SessionSchema = SchemaFactory.createForClass(UserSession).pre('save
   this.increment();
   return next();
 })
+
+interface AppSessionData extends SessionData {
+  userId?: string;
+  roomSessionId?: string;
+  roomId?: string;
+}
+
+export type AppSession = Partial<AppSessionData> & Session;

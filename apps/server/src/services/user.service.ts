@@ -1,19 +1,35 @@
-import { ILoginRequest } from '@chattr/interfaces';
-import { Injectable } from '@nestjs/common';
+import { ILoginRequest, ISignupRequest } from '@chattr/interfaces';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { compare } from 'bcrypt';
+import { compare, genSalt, hash } from 'bcrypt';
 import { Model } from 'mongoose';
-import { UserEntity, UserSession } from '../models';
-import { generateRandomToken } from '../util';
+import { UserEntity } from '../models';
 
 @Injectable()
 export class UserService {
   constructor(
     @InjectModel(UserEntity.name) private userModel: Model<UserEntity>,
-    @InjectModel(UserSession.name) private sessionModel: Model<UserSession>
+    // @InjectModel(UserSession.name) private sessionModel: Model<UserSession>
   ) {
   }
-  
+
+  async signupUser({ email, name, password, avatar }: ISignupRequest) {
+    const exists = await this.userModel.exists({
+      email
+    }).exec();
+
+    if (exists) throw new ConflictException('Email address is already in use');
+
+    const salt = await genSalt(12);
+    const passwordHash = await hash(password, salt);
+
+    await new this.userModel({
+      email,
+      passwordHash,
+      avatar,
+      name
+    }).save();
+  }
 
   async loginUser({ email, password }: ILoginRequest) {
     const userDoc = await this.userModel.findOne({
@@ -28,12 +44,6 @@ export class UserService {
 
     if (!passwordVerified) throw authError;
 
-    const token = generateRandomToken();
-    const session = await new this.sessionModel({
-      token,
-      userId: userDoc
-    }).save();
-
-    return session;
+    return userDoc._id.toString();
   }
 }
