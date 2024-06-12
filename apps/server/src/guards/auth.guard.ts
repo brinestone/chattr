@@ -1,31 +1,35 @@
+import { User } from '@chattr/interfaces';
 import {
   CanActivate,
   ExecutionContext,
-  Inject,
   Injectable,
   Logger,
 } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
 import { WsException } from '@nestjs/websockets';
 import { Request } from 'express';
-import { App } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
+import { Model } from 'mongoose';
 import {
+  EmptyError,
   catchError,
   combineLatestWith,
+  first,
   from,
   map,
   of,
-  switchMap,
   tap,
   throwError,
 } from 'rxjs';
 import { Socket } from 'socket.io';
+import { UserEntity } from '../models';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
   private readonly logger = new Logger(AuthGuard.name);
 
-  constructor(@Inject('FIREBASE') private readonly app: App) {}
+  constructor(
+    @InjectModel(UserEntity.name) private readonly userModel: Model<User>
+  ) {}
   canActivate(context: ExecutionContext) {
     this.logger.verbose(`Authenticating "${context.getType()}" request...`);
     const verificationResult$ =
@@ -33,8 +37,8 @@ export class AuthGuard implements CanActivate {
         ? this.verifyAuthWs(context)
         : this.verifyAuthHttp(context);
     return verificationResult$.pipe(
-      tap(([{ picture, email, uid }, request]) => {
-        (request as any)['user'] = { picture, email, uid };
+      tap(([user, request]) => {
+        (request as unknown)['user'] = user;
       }),
       map(() => true)
     );
@@ -56,29 +60,22 @@ export class AuthGuard implements CanActivate {
   private doVerification(idToken?: string) {
     this.logger.verbose(`Verifying Auth ID token...`);
     if (!idToken)
-      throw new WsException(
-        '401 - Unauthorized. Please sign into your account'
+      return throwError(
+        () =>
+          new WsException('401 - Unauthorized. Please sign into your account')
       );
 
-    const auth = getAuth(this.app);
-    return from(auth.verifyIdToken(idToken)).pipe(
-      switchMap((x) => {
-        if (x) return of(x);
-        return throwError(
-          () =>
-            new WsException('401 - Unauthorized. Please sign into your account')
-        );
-      }),
-      tap(() => this.logger.verbose(`ID Token verification successful`)),
-      catchError((error: Error) =>
-        throwError(() => {
-          this.logger.error(error.message, error.stack);
-          console.log(error.name);
-          return new WsException(
-            '401 - Unauthorized. Please sign into your account'
-          );
-        })
-      )
+    return from(this.userModel.findById(idToken).exec()).pipe(
+      first((doc) => !!doc),
+      catchError((error: Error) => {
+        return throwError(() => {
+          return error instanceof EmptyError
+            ? new WsException(
+                '401 - Unauthorized. Please sign into your account'
+              )
+            : error;
+        });
+      })
     );
   }
 }

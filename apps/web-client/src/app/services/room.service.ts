@@ -1,15 +1,9 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Auth, authState } from '@angular/fire/auth';
-import {
-  Firestore,
-  collectionChanges,
-  query,
-  where,
-} from '@angular/fire/firestore';
-import { Room } from '@chattr/dto';
+import { Firestore } from '@angular/fire/firestore';
+import { Room } from '@chattr/interfaces';
 import { getIdToken } from 'firebase/auth';
-import { collection } from 'firebase/firestore';
 import { Device } from 'mediasoup-client';
 import {
   DtlsParameters,
@@ -23,9 +17,7 @@ import {
   from,
   identity,
   map,
-  mergeMap,
   of,
-  scan,
   switchMap,
   tap,
   throwError,
@@ -33,7 +25,6 @@ import {
 } from 'rxjs';
 import { Socket, io } from 'socket.io-client';
 import { environment } from '../../environments/environment.development';
-import { Store } from '@ngxs/store';
 
 export type RoomEvent<T = any> = {
   event: 'error' | 'message';
@@ -188,31 +179,7 @@ export class RoomService {
   }
 
   getRooms$() {
-    return authState(this.auth).pipe(
-      switchMap((user) => {
-        if (!user) return of(new Set<Room>());
-        const ref = collection(this.db, 'rooms');
-        const _filter = query(
-          ref,
-          where('memberUids', 'array-contains', user.uid)
-        );
-        return collectionChanges(_filter, {
-          events: ['added', 'modified', 'removed'],
-        }).pipe(
-          mergeMap(identity),
-          filter((change) => change.doc.exists()),
-          map((change) => {
-            const room = change.doc.data() as Room;
-            room.ref = change.doc.id;
-            return room;
-          }),
-          scan((set, curr) => {
-            set.add(curr);
-            return set;
-          }, new Set<Room>())
-        );
-      })
-    );
+    return authState(this.auth).pipe(map(() => new Set<Room>()));
   }
 
   async getMediaStream(
@@ -263,6 +230,7 @@ export class RoomService {
             deviceId: video.id,
             width: 320,
             height: 200,
+            facingMode: 'front',
           };
         }
 

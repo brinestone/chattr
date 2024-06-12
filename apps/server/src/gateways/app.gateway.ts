@@ -1,5 +1,5 @@
-import { Room, User } from '@chattr/dto';
-import { Ip, Logger, UseFilters, UseGuards } from '@nestjs/common';
+import { Room } from '@chattr/interfaces';
+import { Logger, UseFilters, UseGuards } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -7,7 +7,6 @@ import {
   OnGatewayDisconnect,
   SubscribeMessage,
   WebSocketGateway,
-  WebSocketServer,
   WsException,
 } from '@nestjs/websockets';
 import {
@@ -15,16 +14,18 @@ import {
   MediaKind,
   RtpParameters,
 } from 'mediasoup/node/lib/types';
+import { HydratedDocument } from 'mongoose';
 import { catchError, tap, throwError } from 'rxjs';
 import { Socket } from 'socket.io';
 import { Ctx } from '../decorators/room.decorator';
 import { WsExceptionFilter } from '../filters/ws-exception.filter';
 import { AuthGuard } from '../guards/auth.guard';
 import { RoomGuard } from '../guards/room.guard';
+import { RoomDocument, UserDocument } from '../models';
 import { RoomService } from '../services/room.service';
 
-function getRoomChannel(room: Room) {
-  return `rooms:${room.ref}`;
+function getRoomChannel(room: HydratedDocument<Room>) {
+  return `rooms:${room._id.toString()}`;
 }
 
 @WebSocketGateway(undefined, { cors: true })
@@ -32,7 +33,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(AppGateway.name);
   constructor(private roomService: RoomService) {}
 
-  handleConnection(client: Socket, ...args: any[]) {
+  handleConnection(client: Socket, ...args: unknown[]) {
     this.logger.log(`${client.id} connected. Args: ${args}`);
   }
 
@@ -45,8 +46,8 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('init_session')
   handleMessage(
     @ConnectedSocket() socket: Socket,
-    @Ctx('user') user: User,
-    @Ctx('room') room: Room
+    @Ctx('user') user: UserDocument,
+    @Ctx('room') room: RoomDocument
   ) {
     const clientIp = socket.request.socket.remoteAddress;
     return this.roomService.assertSession(room, user, clientIp).pipe(
@@ -80,10 +81,10 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleProduce(
     @MessageBody()
     data: { rtpParameters: RtpParameters; kind: MediaKind; sessionId: string },
-    @Ctx('room') room: Room,
+    @Ctx('room') room: RoomDocument,
     @ConnectedSocket() socket: Socket
   ) {
-    return this.roomService.createProducer(data, room).pipe(
+    return this.roomService.createProducer(data).pipe(
       tap((data) => socket.to(getRoomChannel(room)).emit('new_producer', data)),
       catchError((error: Error) => throwError(() => new WsException(error)))
     );

@@ -18,8 +18,9 @@ import { getFirestore } from 'firebase/firestore';
 import { environment } from '../environments/environment.development';
 import { appRoutes } from './app.routes';
 import { NgxsModule } from '@ngxs/store';
-import { NgxsStoragePluginModule } from '@ngxs/storage-plugin';
+import { NgxsStoragePluginModule, StorageOption } from '@ngxs/storage-plugin';
 import { NgxsLoggerPluginModule } from '@ngxs/logger-plugin';
+import { NgxsReduxDevtoolsPluginModule } from '@ngxs/devtools-plugin';
 import { AppState } from './state';
 
 export const appConfig: ApplicationConfig = {
@@ -30,7 +31,10 @@ export const appConfig: ApplicationConfig = {
     importProvidersFrom([
       NgxsModule.forRoot([AppState]),
       NgxsLoggerPluginModule.forRoot({ disabled: !isDevMode() }),
-      NgxsStoragePluginModule.forRoot(),
+      NgxsStoragePluginModule.forRoot({
+        storage: StorageOption.LocalStorage
+      }),
+      NgxsReduxDevtoolsPluginModule.forRoot({ disabled: !isDevMode() }),
       provideFirebaseApp(() => {
         return initializeApp(environment.firebaseConfig);
       }),

@@ -1,7 +1,7 @@
-import { Room, RoomMember, RoomMemberSession, User } from '@chattr/dto';
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { App } from 'firebase-admin/app';
-import { FieldValue, Firestore, getFirestore } from 'firebase-admin/firestore';
+import { Room, User } from '@chattr/interfaces';
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { plainToInstance } from 'class-transformer';
 import { createWorker } from 'mediasoup';
 import {
   DtlsParameters,
@@ -14,22 +14,28 @@ import {
   WebRtcTransport,
   Worker,
 } from 'mediasoup/node/lib/types';
+import { HydratedDocument, Model } from 'mongoose';
 import { cpus, networkInterfaces, type } from 'os';
 import {
   EmptyError,
   catchError,
+  concatMap,
+  first,
   forkJoin,
   from,
-  generate,
   map,
-  mergeMap,
   of,
   switchMap,
-  take,
   tap,
   throwError,
   throwIfEmpty,
 } from 'rxjs';
+import { RoomEntity, RoomMemberEntity, RoomSessionEntity } from '../models';
+
+type RouterWebRtcServerMap = Record<
+  string,
+  { router: Router; server: WebRtcServer }
+>;
 
 let ip = '';
 
@@ -61,57 +67,46 @@ const mediaCodecs = [
 export class RoomService {
   private readonly logger = new Logger(RoomService.name);
   private readonly workers = Array<Worker>(Math.min(5, cpus().length));
-  private readonly routerWebRtcServerMap: {
-    [key: string]: {
-      router: Router;
-      server: WebRtcServer;
-    };
-  } = {};
-  private readonly webRtcTransports: { [key: string]: WebRtcTransport } = {};
-  private readonly producers: { [key: string]: Producer } = {};
+  private readonly routerWebRtcServerMap: RouterWebRtcServerMap = {};
+  private readonly webRtcTransports: Record<string, WebRtcTransport> = {};
+  private readonly producers: Record<string, Producer> = {};
   private nextWorkerIndex = -1;
-  private readonly db: Firestore;
-
-  constructor(@Inject('FIREBASE') app: App) {
-    this.db = getFirestore(app);
-  }
+  constructor(
+    @InjectModel(RoomEntity.name) private model: Model<RoomEntity>,
+    @InjectModel(RoomMemberEntity.name)
+    private memberModel: Model<RoomMemberEntity>,
+    @InjectModel(RoomSessionEntity.name)
+    private sessionModel: Model<RoomSessionEntity>
+  ) {}
 
   private get nextWorker() {
     return this.workers[++this.nextWorkerIndex % this.workers.length];
   }
 
-  getRooms() {
-    this.db.collection('/');
-  }
+  async createRoom(name: string, owner: HydratedDocument<User>) {
+    const session = await this.model.startSession();
 
-  async createRoom(name: string, ownerRef: string) {
-    const roomRef = this.db.collection('/rooms').doc();
-    await roomRef.set({
-      name,
-      memberUids: [ownerRef],
-      dateCreated: Date.now(),
-    } as Room);
-
-    const memberRef = this.db
-      .collection(`rooms/${roomRef.id}/members`)
-      .doc(ownerRef);
-    await memberRef.set({
-      uid: ownerRef,
-      isBanned: false,
-      role: 'owner',
-    } as RoomMember);
-    return await roomRef.get();
+    return await session
+      .withTransaction(() => {
+        const memberModel = new this.memberModel({
+          userId: owner,
+          isBanned: false,
+          role: 'owner',
+        });
+        const roomModel = new this.model({
+          name,
+          members: [memberModel],
+        });
+        return Promise.all([memberModel.save(), roomModel.save()]);
+      })
+      .then(([member]) => member);
   }
 
   onApplicationBootstrap() {
     this.logger.verbose('Starting workers...');
-    generate(
-      0,
-      (x) => x < this.workers.length,
-      (n) => n + 1
-    )
+    from(this.workers)
       .pipe(
-        mergeMap((index) =>
+        concatMap((_, index) =>
           forkJoin([
             createWorker({
               logLevel: 'debug',
@@ -189,28 +184,32 @@ export class RoomService {
     this.workers.forEach((worker) => worker.close());
   }
 
-  createProducer(
-    {
-      sessionId,
-      rtpParameters,
-      kind,
-    }: { rtpParameters: RtpParameters; kind: MediaKind; sessionId: string },
-    room: Room
-  ) {
+  createProducer({
+    sessionId,
+    rtpParameters,
+    kind,
+  }: {
+    rtpParameters: RtpParameters;
+    kind: MediaKind;
+    sessionId: string;
+  }) {
     const transport = this.webRtcTransports[sessionId];
     if (!transport) {
       return throwError(() => new Error('Transport already closed'));
     }
 
     return from(transport.produce({ kind, rtpParameters })).pipe(
-      tap((producer) => {
+      tap(async (producer) => {
         this.producers[producer.id] = producer;
-        this.db
-          .doc(`rooms/${room.ref}/sessions/${sessionId}`)
-          .update({
-            producers: FieldValue.arrayUnion(producer.id),
-          })
-          .then(() => this.logger.verbose(`Session: ${sessionId} updated`));
+        await this.sessionModel.updateOne(
+          { _id: sessionId },
+          {
+            $inc: { _v: 1 },
+            $push: {
+              producers: producer.id,
+            },
+          }
+        );
       }),
       map(({ id }) => ({ producerId: id }))
     );
@@ -230,54 +229,50 @@ export class RoomService {
   }
 
   assertSession(room: Room, user: User, clientIp: string) {
-    return from(
-      this.db
-        .collection(`rooms/${room.ref}/sessions`)
-        .where('serverIp', '==', ip)
-        .where('sessionOwner', '==', user.uid)
-        .where('endDate', '==', null)
-        .orderBy('startDate', 'desc')
-        .limit(1)
-        .get()
-    ).pipe(
-      mergeMap((snapshot) => {
-        return snapshot.docs;
-      }),
+    const member$ = from(
+      this.memberModel
+        .findOne({
+          userId: user.id,
+        })
+        .exec()
+    );
+    return member$.pipe(
+      first((doc) => !!doc),
+      switchMap((doc) =>
+        this.sessionModel
+          .findOne({
+            serverIp: ip,
+            owner: doc._id,
+            endDate: null,
+          })
+          .exec()
+      ),
       throwIfEmpty(),
-      map((snapshot) => snapshot.data() as RoomMemberSession),
       tap((session) => this.logger.verbose(`Reusing session: ${session.id}.`)),
       catchError((error: Error) => {
         if (error instanceof EmptyError) {
-          return of(
-            this.db.collection(`rooms/${room.ref}/sessions`).doc()
-          ).pipe(
-            tap((ref) =>
-              this.logger.verbose(
-                `Sessions timed out. Creating new Session: ${ref.id}`
-              )
+          return forkJoin([member$, this.sessionModel.startSession()]).pipe(
+            tap(() =>
+              this.logger.verbose(`Sessions timed out. Creating new Session`)
             ),
-            switchMap((ref) =>
-              from(
-                ref.set({
+            concatMap(([member, clientSession]) => {
+              return clientSession.withTransaction(() => {
+                const session = new this.sessionModel({
                   clientIp,
                   serverIp: ip,
-                  id: ref.id,
-                  producers: [],
-                  sessionOwner: user.uid,
-                  startDate: Date.now(),
-                } as RoomMemberSession)
-              ).pipe(
-                switchMap(() => ref.get()),
-                map((doc) => doc.data() as RoomMemberSession)
-              )
-            )
+                  member,
+                });
+                return session.save();
+              });
+            })
           );
         }
         return throwError(() => error);
       }),
+      map((doc) => plainToInstance(RoomSessionEntity, doc)),
       switchMap((session) => {
         return forkJoin([
-          this.assertWebRtcTransport(room.ref, session.id),
+          this.assertWebRtcTransport(room.id, session.id),
           of(session),
         ]);
       }),
@@ -286,7 +281,7 @@ export class RoomService {
           { id, iceCandidates, iceParameters, dtlsParameters, sctpParameters },
           session,
         ]) => {
-          const { router } = this.routerWebRtcServerMap[room.ref];
+          const { router } = this.routerWebRtcServerMap[room.id];
           return {
             transportParams: {
               id,

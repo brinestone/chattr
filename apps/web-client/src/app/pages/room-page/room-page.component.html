@@ -2,8 +2,8 @@
 <div>b</div>
 <p-dialog
   [breakpoints]="{ '960px': '75vw' }"
-  [visible]="(appConfig$ | async)?.deviceConfig?.configured ?? true"
-  [closable]="false"
+  [visible]="deviceConfigDialog() ?? true"
+  (onHide)="onDeviceConfigDone()"
   header="Configure Devices"
 >
   <div class="flex items-center justify-center">
@@ -11,7 +11,8 @@
       autoplay
       #previewVideo
       poster="https://fakeimg.pl/340x220?text=Video+preview"
-      class="rounded-md shadow"
+      class="rounded-md shadow-md"
+      style="transform: scaleX(-1)"
     ></video>
   </div>
   <ng-template pTemplate="footer">

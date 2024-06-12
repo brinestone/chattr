@@ -1,19 +1,13 @@
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
-import { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger } from '@nestjs/common';
-import * as fbCreds from './assets/firebase-credentials.json';
-import { ServiceAccount, cert, initializeApp } from 'firebase-admin/app';
+import { ConfigService } from '@nestjs/config';
+import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { default as MongoStore } from 'connect-mongo';
+import { default as session } from 'express-session';
+import 'reflect-metadata';
+import { AppModule } from './app.module';
 
 const logger = new Logger('ROOT');
-logger.verbose('Initializing Firebase...');
-
-initializeApp({
-  credential: cert(fbCreds as ServiceAccount),
-  databaseURL: 'https://chattr-8d770-default-rtdb.firebaseio.com/'
-});
-
-logger.verbose('Firebase initialized successfully');
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -23,6 +17,22 @@ async function bootstrap() {
     origin: "*"
   });
   (app as NestExpressApplication).set('trust proxy', true);
-  await app.listen(3000);
+  const configService = app.get<ConfigService>(ConfigService);
+  app.use(
+    session({
+      secret: configService.get<string>('SESSION_KEY'),
+      resave: false,
+      saveUninitialized: false,
+      store: MongoStore.create({
+        mongoUrl: configService.getOrThrow<string>('DB_URI'),
+        dbName: configService.getOrThrow<string>('DB_NAME'),
+        autoRemove: 'native'
+      })
+    })
+  );
+  const port = configService.get<number>('SERVER_PORT', 3000);
+  await app.listen(port, () => {
+    logger.verbose(`Server started on ${port}`);
+  });
 }
 bootstrap();

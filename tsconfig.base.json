@@ -15,7 +15,8 @@
     "skipDefaultLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@chattr/dto": ["libs/src/index.ts"]
+      "@chattr/dto": ["libs/dto/src/index.ts"],
+      "@chattr/interfaces": ["libs/interfaces/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

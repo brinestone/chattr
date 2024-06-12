@@ -1,12 +1,12 @@
 import { Injectable } from '@angular/core';
 import { Action, State, StateContext } from '@ngxs/store';
-import { SetAudioDevice, SetVideoDevice } from '../actions';
+import { SaveDeviceConfig, SetAudioDevice, SetVideoDevice } from '../actions';
 
 export type AppStateModel = {
   deviceConfig: {
     audio?: string;
     video?: string;
-    configured: boolean;
+    unconfigured: boolean;
   };
 };
 
@@ -15,11 +15,20 @@ export type AppStateModel = {
   name: 'appConfig',
   defaults: {
     deviceConfig: {
-      configured: false,
+      unconfigured: true,
     },
   },
 })
 export class AppState {
+
+  @Action(SaveDeviceConfig)
+  onSaveDeviceConfig(ctx: StateContext<AppStateModel>) {
+    const currentState = ctx.getState();
+    ctx.patchState({
+      deviceConfig: { ...currentState.deviceConfig, unconfigured: false }
+    });
+  }
+
   @Action(SetAudioDevice)
   onSetAudioDevice(ctx: StateContext<AppStateModel>, { id }: SetAudioDevice) {
     const currentState = ctx.getState();

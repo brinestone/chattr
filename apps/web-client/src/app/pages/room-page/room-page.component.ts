@@ -25,10 +25,11 @@ import {
   EMPTY,
   Observable,
   combineLatest,
+  map,
   mergeMap,
   switchMap,
 } from 'rxjs';
-import { SetAudioDevice, SetVideoDevice } from '../../actions';
+import { SaveDeviceConfig, SetAudioDevice, SetVideoDevice } from '../../actions';
 import { MediaDevice, RoomService } from '../../services/room.service';
 import { AppStateModel } from '../../state';
 
@@ -59,6 +60,10 @@ export class RoomPageComponent implements OnInit {
   private readonly auth = inject(Auth);
   private readonly store = inject(Store);
   private readonly messageService = inject(MessageService);
+  readonly deviceConfigDialog = toSignal(this.appConfig$.pipe(
+    takeUntilDestroyed(),
+    map(({ deviceConfig: { unconfigured } }) => unconfigured)
+  ))
   private readonly mediaSources = toSignal(
     this.roomService.findMediaDevices().pipe(takeUntilDestroyed())
   );
@@ -94,13 +99,13 @@ export class RoomPageComponent implements OnInit {
       },
       ...this.audioSources().map(
         (mediaDevice) =>
-          ({
-            label: mediaDevice.name,
-            id: mediaDevice.id,
-            command: () => {
-              this.chosenAudioDeviceSubject.next(mediaDevice);
-            },
-          } as MenuItem)
+        ({
+          label: mediaDevice.name,
+          id: mediaDevice.id,
+          command: () => {
+            this.chosenAudioDeviceSubject.next(mediaDevice);
+          },
+        } as MenuItem)
       ),
     ];
   });
@@ -115,13 +120,13 @@ export class RoomPageComponent implements OnInit {
       },
       ...this.videoSources().map(
         (mediaDevice) =>
-          ({
-            label: mediaDevice.name,
-            id: mediaDevice.id,
-            command: () => {
-              this.chosenVideoDeviceSubject.next(mediaDevice);
-            },
-          } as MenuItem)
+        ({
+          label: mediaDevice.name,
+          id: mediaDevice.id,
+          command: () => {
+            this.chosenVideoDeviceSubject.next(mediaDevice);
+          },
+        } as MenuItem)
       ),
     ];
   });
@@ -166,5 +171,9 @@ export class RoomPageComponent implements OnInit {
           });
         },
       });
+  }
+
+  onDeviceConfigDone() {
+    this.store.dispatch(new SaveDeviceConfig());
   }
 }

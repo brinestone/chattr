@@ -16,7 +16,7 @@ import {
   Validators,
 } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { Room } from '@chattr/dto';
+import { Room } from '@chattr/interfaces';
 import { NgxJdenticonModule } from 'ngx-jdenticon';
 import { MessageService } from 'primeng/api';
 import { AutoCompleteModule } from 'primeng/autocomplete';

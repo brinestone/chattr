@@ -7,3 +7,7 @@ export class SetVideoDevice {
   static type = '[Device] Set Video Device';
   constructor(readonly id?: string) {}
 }
+
+export class SaveDeviceConfig{
+  static type = '[Device] Save Device Config';
+}
