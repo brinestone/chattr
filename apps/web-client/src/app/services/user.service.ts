@@ -1,8 +1,8 @@
-import { HttpClient, HttpEventType } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { ILoginRequest } from '@chattr/interfaces';
+import { catchError, tap } from 'rxjs';
 import { environment } from '../../environments/environment.development';
-import { catchError, filter, map } from 'rxjs';
 import { parseHttpClientError } from '../util';
 
 @Injectable({
@@ -16,10 +16,11 @@ export class UserService {
     return false;
   }
   signIn(request: ILoginRequest) {
-    return this.http.post(`${environment.backendOrigin}/users/login`, request, { observe: 'events', withCredentials: true }).pipe(
-      filter(event => event.type == HttpEventType.Response),
-      map(ev => {
-        ev.
+    return this.http.post(`${environment.backendOrigin}/users/login`, request, { observe: 'response', withCredentials: true }).pipe(
+      // filter(event => event.type == HttpEventType.Response),
+      tap(response => {
+        const cookieHeader = response.headers
+        console.log(cookieHeader);
       }),
       catchError(parseHttpClientError)
     );

@@ -19,10 +19,10 @@ import { catchError, tap, throwError } from 'rxjs';
 import { Socket } from 'socket.io';
 import { Ctx } from '../decorators/room.decorator';
 import { WsExceptionFilter } from '../filters/ws-exception.filter';
-import { AuthGuard } from '../guards/auth.guard';
 import { RoomGuard } from '../guards/room.guard';
 import { RoomDocument, UserDocument } from '../models';
 import { RoomService } from '../services/room.service';
+import { JwtGuard } from '../guards/jwt.guard';
 
 function getRoomChannel(room: HydratedDocument<Room>) {
   return `rooms:${room._id.toString()}`;
@@ -41,7 +41,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.log(`${client.id} disconnected.`);
   }
 
-  @UseGuards(AuthGuard, RoomGuard)
+  @UseGuards(JwtGuard, RoomGuard)
   @UseFilters(new WsExceptionFilter())
   @SubscribeMessage('init_session')
   handleMessage(
@@ -62,7 +62,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     );
   }
 
-  @UseGuards(AuthGuard, RoomGuard)
+  @UseGuards(JwtGuard, RoomGuard)
   @UseFilters(new WsExceptionFilter())
   @SubscribeMessage('connect_transport')
   handleConnectTransport(
@@ -75,7 +75,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
   }
 
-  @UseGuards(AuthGuard, RoomGuard)
+  @UseGuards(JwtGuard, RoomGuard)
   @UseFilters(new WsExceptionFilter())
   @SubscribeMessage('produce')
   handleProduce(

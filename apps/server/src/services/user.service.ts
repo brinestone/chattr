@@ -13,7 +13,7 @@ export class UserService {
   ) {
   }
 
-  async signupUser({ email, name, password, avatar }: ISignupRequest) {
+  async createUserAsync({ email, name, password, avatar }: ISignupRequest) {
     const exists = await this.userModel.exists({
       email
     }).exec();
@@ -29,6 +29,26 @@ export class UserService {
       avatar,
       name
     }).save();
+  }
+
+  async findUserByEmailAsync(email: string) {
+    return await this.userModel.findOne({ email }).exec();
+  }
+
+  async validateCredentials({ email, password }: ILoginRequest) {
+    const userDoc = await this.userModel.findOne({
+      email
+    });
+
+    const authError = new Error('Invalid email or password');
+
+    if (!userDoc) throw authError;
+
+    const passwordVerified = await compare(password, userDoc.passwordHash);
+
+    if (!passwordVerified) throw authError;
+
+    return userDoc;
   }
 
   async loginUser({ email, password }: ILoginRequest) {

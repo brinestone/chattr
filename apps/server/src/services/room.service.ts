@@ -1,5 +1,5 @@
 import { Room, User } from '@chattr/interfaces';
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { plainToInstance } from 'class-transformer';
 import { createWorker } from 'mediasoup';
@@ -30,7 +30,7 @@ import {
   throwError,
   throwIfEmpty,
 } from 'rxjs';
-import { RoomEntity, RoomMemberEntity, RoomSessionEntity } from '../models';
+import { RoomEntity, RoomMemberEntity, RoomSessionEntity, UserEntity } from '../models';
 
 type RouterWebRtcServerMap = Record<
   string,
@@ -77,16 +77,29 @@ export class RoomService {
     private memberModel: Model<RoomMemberEntity>,
     @InjectModel(RoomSessionEntity.name)
     private sessionModel: Model<RoomSessionEntity>
-  ) {}
+  ) { }
 
   private get nextWorker() {
     return this.workers[++this.nextWorkerIndex % this.workers.length];
   }
 
-  async createRoom(name: string, owner: HydratedDocument<User>) {
-    const session = await this.model.startSession();
+  async validateRoomMembership(roomId: string, { id }: UserEntity): Promise<[RoomEntity, RoomMemberEntity]> {
+    const roomDoc = await this.model.findById(roomId);
+    if (!roomDoc) throw new NotFoundException(`Room not found`);
 
-    return await session
+    const memberDoc = await this.memberModel.findOne({
+      _id: { $in: roomDoc.members },
+      userId: id
+    });
+
+    if (!memberDoc) throw new ForbiddenException(`Not a member of the room specified`);
+    return [new RoomEntity(roomDoc.toObject()), new RoomMemberEntity(memberDoc.toObject())];
+  }
+
+  async createRoom(name: string, owner: User) {
+    const dbSession = await this.model.startSession();
+
+    return await dbSession
       .withTransaction(() => {
         const memberModel = new this.memberModel({
           userId: owner,

@@ -1,20 +1,19 @@
-import { User } from '@chattr/interfaces';
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { Ctx } from '../decorators/room.decorator';
-import { AuthGuard } from '../guards/auth.guard';
+import { JwtGuard } from '../guards/jwt.guard';
+import { UserEntity } from '../models';
 import { RoomService } from '../services/room.service';
-import { HydratedDocument } from 'mongoose';
 
 @Controller('rooms')
 export class RoomController {
-  constructor(private roomService: RoomService) {}
+  constructor(private roomService: RoomService) { }
 
   @Post()
-  @UseGuards(AuthGuard)
+  @UseGuards(JwtGuard)
   async createRoom(
     @Body() { name }: { name: string },
-    @Ctx('user') { id }: HydratedDocument<User>
+    @Ctx('user') e: UserEntity
   ) {
-    return await this.roomService.createRoom(name, id);
+    return await this.roomService.createRoom(name, e);
   }
 }
