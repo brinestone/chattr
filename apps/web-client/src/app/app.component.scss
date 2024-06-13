@@ -1,3 +1,7 @@
+:host {
+    @apply block w-full h-full;
+}
+
 .p-menuitem-link-active {
     color: red;
 }

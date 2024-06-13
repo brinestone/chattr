@@ -1,13 +1,12 @@
 import { CommonModule } from '@angular/common';
 import {
   Component,
-  DestroyRef,
   OnInit,
-  ViewChild,
+  computed,
   inject,
-  signal,
+  signal
 } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { toSignal } from '@angular/core/rxjs-interop';
 import {
   FormControl,
   FormGroup,
@@ -16,17 +15,19 @@ import {
   Validators,
 } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { Room } from '@chattr/interfaces';
+import { Actions, Store } from '@ngxs/store';
 import { NgxJdenticonModule } from 'ngx-jdenticon';
 import { MessageService } from 'primeng/api';
 import { AutoCompleteModule } from 'primeng/autocomplete';
 import { ButtonModule } from 'primeng/button';
-import { Dialog, DialogModule } from 'primeng/dialog';
-import { DialogService } from 'primeng/dynamicdialog';
+import { DialogModule } from 'primeng/dialog';
 import { GalleriaModule } from 'primeng/galleria';
 import { InputTextModule } from 'primeng/inputtext';
+import { MenubarModule } from 'primeng/menubar';
+import { CreateRoom, LoadRooms, SignOut } from '../../actions';
 import { AuthComponent } from '../../auth/auth.component';
-import { RoomService } from '../../services/room.service';
+import { Selectors } from '../../state/selectors';
+import { errorToMessage, monitorAction } from '../../util';
 
 @Component({
   selector: 'chattr-rooms-page',
@@ -43,55 +44,45 @@ import { RoomService } from '../../services/room.service';
     ReactiveFormsModule,
     AuthComponent,
     AutoCompleteModule,
+    MenubarModule,
   ],
   templateUrl: './rooms-page.component.html',
   styleUrl: './rooms-page.component.scss',
 })
 export class RoomsPageComponent implements OnInit {
-  @ViewChild(Dialog) private dialogRef!: Dialog;
-  private readonly roomService = inject(RoomService);
-  private readonly destroyRef = inject(DestroyRef);
+  private readonly store = inject(Store);
+  private readonly actions = inject(Actions);
   private readonly messageService = inject(MessageService);
-  readonly rooms = signal<Room[]>([]);
+  readonly rooms = toSignal(this.store.select(Selectors.rooms));
   readonly form = new FormGroup({
     name: new FormControl<string>('', { validators: [Validators.required] }),
   });
-  readonly isBusy = signal(false);
+  readonly creatingRoom = toSignal<boolean>(monitorAction(this.actions, CreateRoom, () => true, () => false));
   readonly openNewRoomDialog = signal(false);
-  readonly openAuthDialog = signal(true);
-  
+  readonly isSignedIn = this.store.selectSignal(Selectors.isSignedIn);
+  readonly openAuthDialog = computed(() => !this.isSignedIn());
+
   ngOnInit(): void {
-    // this.isBusy.set(true);
-    this.roomService
-      .getRooms$()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (data) => {
-          this.rooms.set([...data]);
-        },
-      });
+    this.store.dispatch(LoadRooms);
+  }
+
+  onSignOutButtonClicked() {
+    this.store.dispatch(SignOut);
   }
 
   onNewRoomFormSubmit() {
-    this.isBusy.set(true);
-    this.roomService.createRoom(String(this.form.value.name)).subscribe({
+    this.store.dispatch(new CreateRoom(String(this.form.value.name))).subscribe({
       error: (error: Error) => {
-        this.isBusy.set(false);
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Error',
-          detail: error.message,
-        });
+        this.messageService.add(errorToMessage(error));
       },
       complete: () => {
         this.messageService.add({
           severity: 'success',
           summary: 'Success',
-          detail: 'Room created successfully',
+          detail: `${this.form.value.name} was created successfully`
         });
-        this.isBusy.set(false);
         this.openNewRoomDialog.set(false);
-      },
+      }
     });
   }
 

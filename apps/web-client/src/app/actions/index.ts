@@ -19,7 +19,20 @@ export class SignIn implements ILoginRequest {
   constructor(readonly email: string, readonly password: string) { }
 }
 
+export class SignOut {
+  static type = '[User] Sign out';
+}
+
 export class SessionUpdated {
   static type = '[User] Session updated';
   constructor(readonly signedIn: boolean) { }
+}
+
+export class CreateRoom {
+  static type = `[Room] Create room`;
+  constructor(readonly name: string) { }
+}
+
+export class LoadRooms {
+  static type = '[Room] Load rooms'
 }

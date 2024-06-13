@@ -1,7 +1,19 @@
-<h1 class="text-gray-700 text-2lg">Your Spaces</h1>
+<div class="container mx-auto py-4 h-full">
+  <div>
+    <p-menubar>
+      <ng-template pTemplate="end">
+        @if (isSignedIn()) {
+        <p-button (onClick)="onSignOutButtonClicked()" label="Sign out" [outlined]="true" icon="pi pi-lock-open"
+          size="small" />
+        }
+      </ng-template>
+    </p-menubar>
+  </div>
+  <div class="flex flex-col justify-center items-center gap-4 h-full w-full">
+    <h1 class="text-gray-700 text-2lg m-0">Your Spaces</h1>
 
-<div class="container mx-auto space-y-3">
-  <p-galleria [value]="rooms()" [circular]="true" [responsiveOptions]="[
+    <div class="container mx-auto space-y-3">
+      <p-galleria [value]="rooms()" [circular]="true" [responsiveOptions]="[
     {
         breakpoint: '1024px',
         numVisible: 5
@@ -15,21 +27,25 @@
         numVisible: 1
     }
 ]">
-    <ng-template pTemplate="item" let-room>
-      <a routerLink="/rooms/{{room.ref}}"
-        class="w-[15rem] text-current no-underline visited:text-current bg-gray-200 hover:bg-gray-700 hover:shadow-md hover:text-white transition-colors m-2 rounded-md p-3 flex flex-col items-center justify-center gap-3">
-        <svg class="rounded-full" width="100" height="100" [data-jdenticon-value]="room.ref"></svg>
-        <h2>{{ room.name }}</h2>
-      </a>
-    </ng-template>
-    <ng-template pTemplate="thumbnail" let-room>
-      <div class="bg-gray-400 w-[5rem] flex justify-center items-center py-4">
-        <svg class="rounded-full border" width="30" height="30" [data-jdenticon-value]="room.ref"></svg>
+        <ng-template pTemplate="item" let-room>
+          <a routerLink="/rooms/{{room.ref}}"
+            class="w-[15rem] text-current no-underline visited:text-current bg-gray-200 hover:bg-gray-700 hover:shadow-md hover:text-white transition-colors m-2 rounded-md p-3 flex flex-col items-center justify-center gap-3">
+            <svg class="rounded-full" width="100" height="100" [data-jdenticon-value]="room.ref"></svg>
+            <h2>{{ room.name }}</h2>
+          </a>
+        </ng-template>
+        <ng-template pTemplate="thumbnail" let-room>
+          <div class="bg-gray-400 w-[5rem] flex justify-center items-center py-4">
+            <svg class="rounded-full border" width="30" height="30" [data-jdenticon-value]="room.ref"></svg>
+          </div>
+        </ng-template>
+      </p-galleria>
+      @if(isSignedIn()) {
+      <div class="w-full flex justify-center">
+        <p-button (onClick)="openNewRoomDialog.set(true)" label="Add a Space" icon="pi pi-plus" />
       </div>
-    </ng-template>
-  </p-galleria>
-  <div class="w-full flex justify-center">
-    <p-button (onClick)="openNewRoomDialog.set(true)" label="Add a Space" icon="pi pi-plus" />
+      }
+    </div>
   </div>
 </div>
 
@@ -63,8 +79,8 @@
             </span>
         </div> -->
     <div class="flex justify-center items-center gap-3">
-      <p-button size="small" type="submit" [loading]="isBusy()" loadingIcon="pi pi-spinner pi-spin"
-        [disabled]="form.invalid || isBusy()" label="Continue" icon="pi pi-save" />
+      <p-button size="small" type="submit" [loading]="creatingRoom() ?? false" loadingIcon="pi pi-spinner pi-spin"
+        [disabled]="form.invalid || creatingRoom()" label="Continue" icon="pi pi-save" />
       <p-button size="small" type="button" (onClick)="openNewRoomDialog.set(false)" [text]="true" severity="danger"
         label="Close" />
     </div>

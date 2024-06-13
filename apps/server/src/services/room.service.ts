@@ -83,6 +83,10 @@ export class RoomService {
     return this.workers[++this.nextWorkerIndex % this.workers.length];
   }
 
+  async getSubscribedRoomsFor(userId: string) {
+    return [];
+  }
+
   async validateRoomMembership(roomId: string, { id }: UserEntity): Promise<[RoomEntity, RoomMemberEntity]> {
     const roomDoc = await this.model.findById(roomId);
     if (!roomDoc) throw new NotFoundException(`Room not found`);

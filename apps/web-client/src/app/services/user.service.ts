@@ -1,7 +1,8 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { ILoginRequest } from '@chattr/interfaces';
-import { catchError, tap } from 'rxjs';
+import { ILoginRequest, ILoginResponse } from '@chattr/interfaces';
+import { jwtDecode } from 'jwt-decode';
+import { catchError } from 'rxjs';
 import { environment } from '../../environments/environment.development';
 import { parseHttpClientError } from '../util';
 
@@ -12,16 +13,16 @@ export class UserService {
 
   private readonly http = inject(HttpClient);
 
-  isSignedIn() {
-    return false;
+  isSignedIn(jwt: string) {
+    const { exp } = jwtDecode(jwt);
+
+    if (exp === undefined) return false;
+    const now = Date.now();
+
+    return (exp * 1000) > now;
   }
   signIn(request: ILoginRequest) {
-    return this.http.post(`${environment.backendOrigin}/users/login`, request, { observe: 'response', withCredentials: true }).pipe(
-      // filter(event => event.type == HttpEventType.Response),
-      tap(response => {
-        const cookieHeader = response.headers
-        console.log(cookieHeader);
-      }),
+    return this.http.post<ILoginResponse>(`${environment.backendOrigin}/auth/login`, request).pipe(
       catchError(parseHttpClientError)
     );
   }

@@ -6,7 +6,7 @@
     "start:web-client": "npx nx run web-client:serve:development",
     "start:server": "npx nx run server:serve:development --verbose",
     "dev": "npx nx run-many -t serve",
-    "format": "yarn nx run-many -t lint --fix"
+    "format": "yarn nx affected:lint --fix"
   },
   "private": true,
   "dependencies": {
@@ -27,14 +27,15 @@
     "@nestjs/platform-express": "^10.0.2",
     "@nestjs/platform-socket.io": "^10.3.3",
     "@nestjs/websockets": "^10.3.3",
-    "@ngxs/devtools-plugin": "^3.8.2",
-    "@ngxs/logger-plugin": "^3.8.2",
-    "@ngxs/storage-plugin": "^3.8.2",
-    "@ngxs/store": "^3.8.2",
+    "@ngxs/devtools-plugin": "18.0.0",
+    "@ngxs/logger-plugin": "18.0.0",
+    "@ngxs/storage-plugin": "18.0.0",
+    "@ngxs/store": "18.0.0",
     "bcrypt": "^5.1.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "jdenticon": "^3.2.0",
+    "jwt-decode": "^4.0.0",
     "mediasoup": "^3.13.23",
     "mediasoup-client": "^3.7.6",
     "moment": "^2.30.1",

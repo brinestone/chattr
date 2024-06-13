@@ -2,11 +2,12 @@ import { Injectable, inject } from "@angular/core";
 import { Action, State, StateContext, Store } from "@ngxs/store";
 import { patch } from "@ngxs/store/operators";
 import { tap } from "rxjs";
-import { SessionUpdated, SignIn } from "../actions";
+import { SessionUpdated, SignIn, SignOut } from "../actions";
 import { UserService } from "../services/user.service";
+import { Selectors } from "./selectors";
 
 export type UserStateModel = {
-    sessionId?: string;
+    accessToken?: string;
     isSignedIn: boolean;
 }
 
@@ -22,9 +23,16 @@ export class UserState {
 
     constructor(store: Store) {
         setTimeout(() => {
-            const signedIn = this.userService.isSignedIn();
-            store.dispatch(new SessionUpdated(signedIn));
+            store.select(Selectors.accessToken).subscribe(token => {
+                let signedIn = token ? this.userService.isSignedIn(token) : false;
+                store.dispatch(new SessionUpdated(signedIn));
+            });
         }, 10);
+    }
+
+    @Action(SignOut)
+    onSignout(ctx: StateContext<UserStateModel>) {
+        ctx.setState({ isSignedIn: false });
     }
 
     @Action(SessionUpdated)
@@ -35,7 +43,8 @@ export class UserState {
     @Action(SignIn, { cancelUncompleted: true })
     onSignIn(ctx: StateContext<UserStateModel>, action: SignIn) {
         return this.userService.signIn(action).pipe(
-            tap(() => ctx.dispatch(new SessionUpdated(true)))
+            tap(({ access_token }) => ctx.setState(patch({ accessToken: access_token }))),
+            tap(() => ctx.dispatch(new SessionUpdated(true))),
         );
     }
 }

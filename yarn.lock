@@ -2313,33 +2313,33 @@
   resolved "https://registry.yarnpkg.com/@ngtools/webpack/-/webpack-17.1.4.tgz#0474df6ec48a7770f58c06b4af9eb0a3557f17b9"
   integrity sha512-RJotg78ZGmmwzxVaI4AfsGvFKhXGd931xBhrI0IK7226+uQn/uqnYj4a5cF4h9vAULzs9AkvwtdiUmy2Y0omSQ==
 
-"@ngxs/devtools-plugin@^3.8.2":
-  version "3.8.2"
-  resolved "https://registry.yarnpkg.com/@ngxs/devtools-plugin/-/devtools-plugin-3.8.2.tgz#0deb8aac228483ede44c20ed3a6488e824c4f3fc"
-  integrity sha512-4FWZWJTtgrlTUsiprIBGHaQqvvFKiTesYK9+dg03NGv7z74Z5pNtPVbO1hMeuMmqaJ8r18fDZ3wIfXlXC6noNA==
+"@ngxs/devtools-plugin@18.0.0":
+  version "18.0.0"
+  resolved "https://registry.yarnpkg.com/@ngxs/devtools-plugin/-/devtools-plugin-18.0.0.tgz#0af60ceddc43bb3781c8a48fad383f4a778db768"
+  integrity sha512-fCVBqjHM971KTffBL64KVX7vRTCvm8Hf8tRKRy/9Mn0FKijESquTcuwl+05s57IrwsTyJfMGVBHDdb+nmKgDyw==
   dependencies:
-    tslib "^2.2.0"
+    tslib "^2.3.0"
 
-"@ngxs/logger-plugin@^3.8.2":
-  version "3.8.2"
-  resolved "https://registry.yarnpkg.com/@ngxs/logger-plugin/-/logger-plugin-3.8.2.tgz#ba8f6b28642faad27ec215561a095b73b372b966"
-  integrity sha512-m2gjhzDz6Y99FQdSR56zMZ/WRw9wT2i6e6MDfs8zBSPBWLfJLuD8VznIZDaxmNzBJl+HQ/3a+uEKQm3ImJBnwA==
+"@ngxs/logger-plugin@18.0.0":
+  version "18.0.0"
+  resolved "https://registry.yarnpkg.com/@ngxs/logger-plugin/-/logger-plugin-18.0.0.tgz#b9b2d8fdf527ae4937898cb1338256bc3c3f9509"
+  integrity sha512-2dtwwdO3QiUSSyRFBfuVwOzzyTzsIeFIDvd/bLD4ddbrrTRl4kwPgeqTuj7lWWCvXMUAQ9lMrlt051OGXrSPwQ==
   dependencies:
-    tslib "^2.2.0"
+    tslib "^2.3.0"
 
-"@ngxs/storage-plugin@^3.8.2":
-  version "3.8.2"
-  resolved "https://registry.yarnpkg.com/@ngxs/storage-plugin/-/storage-plugin-3.8.2.tgz#0662aa57911bd359e3891ff784fcc0b5c86d60af"
-  integrity sha512-GCDyGBJtfB3sjj+JIH5Z35TxKsiwJsP+LhHr9Wnf57LBGYNZKR1HXN1CmwHYBpmQzxKkSqCbD03HIk+cTvioLw==
+"@ngxs/storage-plugin@18.0.0":
+  version "18.0.0"
+  resolved "https://registry.yarnpkg.com/@ngxs/storage-plugin/-/storage-plugin-18.0.0.tgz#40b046dc50a67bb30c13647049dcd90e74966d2d"
+  integrity sha512-qnQfA7YATJvwBQGbPwBHrD8Phces4/QE+j3RkzSKX8Sq5Ao2ekUQRZ2uNR9VZOsFJJxuWNqFV8HzHIhKTtt6cg==
   dependencies:
-    tslib "^2.2.0"
+    tslib "^2.3.0"
 
-"@ngxs/store@^3.8.2":
-  version "3.8.2"
-  resolved "https://registry.yarnpkg.com/@ngxs/store/-/store-3.8.2.tgz#f6c8553e03db95baea7684f0f227c0e9a8095983"
-  integrity sha512-IovxuGQDEpB9VefmbTaV1k4hms4iZ4aS9gPVZOC+qzyfvpi7zrUEsjo+yT6FfVBmBg/RLUmPCtqArzbKU5XrLQ==
+"@ngxs/store@18.0.0":
+  version "18.0.0"
+  resolved "https://registry.yarnpkg.com/@ngxs/store/-/store-18.0.0.tgz#4266659ff66bd7c845b3b04fb4e62dfd1e4d80f1"
+  integrity sha512-uYs7/KG0yBLS8Mxe87QVgknM950pRzDZ2iRqGaYDCB22NOQYf3sr+wJ3WdYTZnenTresc1njvUhJXzY7/UDdxA==
   dependencies:
-    tslib "^2.2.0"
+    tslib "^2.3.0"
 
 "@nodelib/fs.scandir@2.1.5":
   version "2.1.5"
@@ -8134,6 +8134,11 @@ jws@^3.2.2:
     jwa "^1.4.1"
     safe-buffer "^5.0.1"
 
+jwt-decode@^4.0.0:
+  version "4.0.0"
+  resolved "https://registry.yarnpkg.com/jwt-decode/-/jwt-decode-4.0.0.tgz#2270352425fd413785b2faf11f6e755c5151bd4b"
+  integrity sha512-+KJGIyHgkGuIq3IEBNftfhW/LfWhXUIY6OmyVWjliu5KH1y0fw7VQ8YndE2O4qZdMSd9SqbnC8GOcZEy0Om7sA==
+
 kareem@2.6.3:
   version "2.6.3"
   resolved "https://registry.yarnpkg.com/kareem/-/kareem-2.6.3.tgz#23168ec8ffb6c1abfd31b7169a6fb1dd285992ac"
@@ -11339,7 +11344,7 @@ tsconfig-paths@^4.0.0, tsconfig-paths@^4.1.2:
     minimist "^1.2.6"
     strip-bom "^3.0.0"
 
-tslib@2.6.2, tslib@^2.1.0, tslib@^2.2.0, tslib@^2.3.0, tslib@^2.4.0, tslib@^2.6.2:
+tslib@2.6.2, tslib@^2.1.0, tslib@^2.3.0, tslib@^2.4.0, tslib@^2.6.2:
   version "2.6.2"
   resolved "https://registry.yarnpkg.com/tslib/-/tslib-2.6.2.tgz#703ac29425e7b37cd6fd456e92404d46d1f3e4ae"
   integrity sha512-AEYxH93jGFPn/a2iVAwW87VuUIkR1FVUKB77NwMF7nBTDkDrrT/Hpt/IrCJ0QXhW27jTBDcf5ZY7w6RiqTMw2Q==

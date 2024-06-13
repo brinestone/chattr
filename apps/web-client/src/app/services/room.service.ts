@@ -1,9 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Auth, authState } from '@angular/fire/auth';
-import { Firestore } from '@angular/fire/firestore';
 import { Room } from '@chattr/interfaces';
-import { getIdToken } from 'firebase/auth';
 import { Device } from 'mediasoup-client';
 import {
   DtlsParameters,
@@ -13,6 +10,7 @@ import {
 } from 'mediasoup-client/lib/types';
 import {
   Observable,
+  catchError,
   filter,
   from,
   identity,
@@ -20,11 +18,11 @@ import {
   of,
   switchMap,
   tap,
-  throwError,
-  toArray,
+  toArray
 } from 'rxjs';
 import { Socket, io } from 'socket.io-client';
 import { environment } from '../../environments/environment.development';
+import { parseHttpClientError } from '../util';
 
 export type RoomEvent<T = any> = {
   event: 'error' | 'message';
@@ -42,8 +40,6 @@ export type MediaDevice = {
   providedIn: 'root',
 })
 export class RoomService {
-  private readonly db = inject(Firestore);
-  private readonly auth = inject(Auth);
   private readonly httpClient = inject(HttpClient);
   private socket?: Socket;
   private device: Device = new Device();
@@ -67,20 +63,8 @@ export class RoomService {
   }
 
   createRoom(name: string) {
-    const user = this.auth.currentUser;
-    if (!user) {
-      return throwError(() => new Error('You have not signed in'));
-    }
-    const room = { name };
-
-    return from(getIdToken(user)).pipe(
-      switchMap((idToken) =>
-        this.httpClient.post<Room>(`${environment.backendOrigin}/rooms`, room, {
-          headers: {
-            authorization: idToken,
-          },
-        })
-      )
+    this.httpClient.post<Room>(`${environment.backendOrigin}/rooms`, { name }).pipe(
+      catchError(parseHttpClientError)
     );
   }
 
@@ -178,8 +162,10 @@ export class RoomService {
     }
   }
 
-  getRooms$() {
-    return authState(this.auth).pipe(map(() => new Set<Room>()));
+  getRooms() {
+    return this.httpClient.get<Room[]>(`${environment.backendOrigin}/rooms`).pipe(
+      catchError(parseHttpClientError)
+    );
   }
 
   async getMediaStream(
