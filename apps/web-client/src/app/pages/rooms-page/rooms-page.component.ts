@@ -15,7 +15,7 @@ import {
   Validators,
 } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { Actions, Store } from '@ngxs/store';
+import { Actions, dispatch, select } from '@ngxs/store';
 import { NgxJdenticonModule } from 'ngx-jdenticon';
 import { MessageService } from 'primeng/api';
 import { AutoCompleteModule } from 'primeng/autocomplete';
@@ -50,28 +50,30 @@ import { errorToMessage, monitorAction } from '../../util';
   styleUrl: './rooms-page.component.scss',
 })
 export class RoomsPageComponent implements OnInit {
-  private readonly store = inject(Store);
+  private readonly createRoomFn = dispatch(CreateRoom);
+  private readonly loadRoomFn = dispatch(LoadRooms);
+  private readonly signOutFn = dispatch(SignOut);
   private readonly actions = inject(Actions);
   private readonly messageService = inject(MessageService);
-  readonly rooms = toSignal(this.store.select(Selectors.rooms));
+  readonly rooms = select(Selectors.rooms);
   readonly form = new FormGroup({
     name: new FormControl<string>('', { validators: [Validators.required] }),
   });
   readonly creatingRoom = toSignal<boolean>(monitorAction(this.actions, CreateRoom, () => true, () => false));
   readonly openNewRoomDialog = signal(false);
-  readonly isSignedIn = this.store.selectSignal(Selectors.isSignedIn);
+  readonly isSignedIn = select(Selectors.isSignedIn);
   readonly openAuthDialog = computed(() => !this.isSignedIn());
 
   ngOnInit(): void {
-    this.store.dispatch(LoadRooms);
+    this.loadRoomFn();
   }
 
   onSignOutButtonClicked() {
-    this.store.dispatch(SignOut);
+    this.signOutFn();
   }
 
   onNewRoomFormSubmit() {
-    this.store.dispatch(new CreateRoom(String(this.form.value.name))).subscribe({
+    this.createRoomFn(String(this.form.value.name)).subscribe({
       error: (error: Error) => {
         this.messageService.add(errorToMessage(error));
       },

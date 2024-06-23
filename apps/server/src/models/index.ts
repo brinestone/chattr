@@ -15,7 +15,9 @@ export type RoomMemberDocument = HydratedDocument<RoomMember>;
 export type RoomDocument = HydratedDocument<Room>;
 
 abstract class BaseEntity implements Entity {
+  @Exclude()
   _id!: MongooseSchema.Types.ObjectId;
+  @Exclude()
   _v!: number;
   updatedAt!: Date;
   createdAt!: Date;

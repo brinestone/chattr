@@ -63,7 +63,7 @@ export class RoomService {
   }
 
   createRoom(name: string) {
-    this.httpClient.post<Room>(`${environment.backendOrigin}/rooms`, { name }).pipe(
+    return this.httpClient.post<Room>(`${environment.backendOrigin}/rooms`, { name }).pipe(
       catchError(parseHttpClientError)
     );
   }

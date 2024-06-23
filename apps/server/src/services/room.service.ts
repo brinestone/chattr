@@ -15,21 +15,26 @@ import {
   Worker,
 } from 'mediasoup/node/lib/types';
 import { HydratedDocument, Model } from 'mongoose';
-import { cpus, networkInterfaces, type } from 'os';
+import { cpus, hostname, networkInterfaces, type } from 'os';
 import {
   EmptyError,
   catchError,
   concatMap,
+  filter,
   first,
   forkJoin,
   from,
+  identity,
   map,
+  mergeMap,
   of,
   switchMap,
+  take,
   tap,
   throwError,
   throwIfEmpty,
 } from 'rxjs';
+import dns from 'dns/promises';
 import { RoomEntity, RoomMemberEntity, RoomSessionEntity, UserEntity } from '../models';
 
 type RouterWebRtcServerMap = Record<
@@ -38,11 +43,6 @@ type RouterWebRtcServerMap = Record<
 >;
 
 let ip = '';
-
-if (type() == 'Darwin')
-  ip = networkInterfaces().en0.find((i) => i.family == 'IPv4')!.address;
-else if (type() == 'Linux')
-  ip = networkInterfaces().eth0.find((i) => i.family == 'IPv4')!.address;
 
 const mediaCodecs = [
   {
@@ -84,7 +84,13 @@ export class RoomService {
   }
 
   async getSubscribedRoomsFor(userId: string) {
-    return [];
+    const memberships = await this.memberModel.find({
+      isBanned: { $ne: true },
+      userId
+    }).exec();
+
+    return await Promise.all(memberships.map(doc => doc.roomId)
+      .map(roomId => this.model.findById(roomId).exec().then(doc => new RoomEntity(doc.toObject()))));
   }
 
   async validateRoomMembership(roomId: string, { id }: UserEntity): Promise<[RoomEntity, RoomMemberEntity]> {
@@ -100,21 +106,27 @@ export class RoomService {
     return [new RoomEntity(roomDoc.toObject()), new RoomMemberEntity(memberDoc.toObject())];
   }
 
-  async createRoom(name: string, owner: User) {
+  async createRoom(name: string, { id }: User) {
     const dbSession = await this.model.startSession();
 
     return await dbSession
-      .withTransaction(() => {
-        const memberModel = new this.memberModel({
-          userId: owner,
+      .withTransaction(async () => {
+        const roomModel = await new this.model({
+          name,
+          members: [],
+        });
+
+        const memberModel = await new this.memberModel({
+          userId: id,
           isBanned: false,
+          roomId: roomModel,
           role: 'owner',
         });
-        const roomModel = new this.model({
-          name,
-          members: [memberModel],
-        });
-        return Promise.all([memberModel.save(), roomModel.save()]);
+
+        roomModel.set({ members: [memberModel] })
+        const ans = await Promise.all([memberModel.save(), roomModel.save()])
+        // await dbSession.commitTransaction();
+        return ans;
       })
       .then(([member]) => member);
   }
@@ -194,6 +206,16 @@ export class RoomService {
           this.logger.error(error.message, error.stack);
         },
       });
+
+    this.logger.verbose('Resolving IP address...');
+    from(Object.values(networkInterfaces())).pipe(
+      mergeMap(identity),
+      filter(({ family, internal }) => family == 'IPv4' && !internal),
+      take(1)
+    ).subscribe(({ address }) => {
+      ip = address;
+      this.logger.log(`IP Address resolved to: ${ip}`);
+    })
   }
 
   beforeApplicationShutdown() {

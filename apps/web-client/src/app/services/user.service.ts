@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { ILoginRequest, ILoginResponse } from '@chattr/interfaces';
+import { ILoginRequest, ILoginResponse, ISignupRequest } from '@chattr/interfaces';
 import { jwtDecode } from 'jwt-decode';
 import { catchError } from 'rxjs';
 import { environment } from '../../environments/environment.development';
@@ -21,6 +21,13 @@ export class UserService {
 
     return (exp * 1000) > now;
   }
+
+  signUp(request: ISignupRequest) {
+    return this.http.post(`${environment.backendOrigin}/auth/signup`, request).pipe(
+      catchError(parseHttpClientError)
+    )
+  }
+
   signIn(request: ILoginRequest) {
     return this.http.post<ILoginResponse>(`${environment.backendOrigin}/auth/login`, request).pipe(
       catchError(parseHttpClientError)

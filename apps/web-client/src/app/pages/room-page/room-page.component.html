@@ -1,52 +1,15 @@
-<!-- <div>a</div>
-<div>b</div>
-<p-dialog
-  [breakpoints]="{ '960px': '75vw' }"
-  [visible]="showDeviceConfigDialog() ?? true"
-  (onHide)="onDeviceConfigDone()"
-  header="Configure Devices"
->
-  <div class="flex items-center justify-center">
-    <video
-      autoplay
-      #previewVideo
-      poster="https://fakeimg.pl/340x220?text=Video+preview"
-      class="rounded-md shadow-md"
-      style="transform: scaleX(-1)"
-    ></video>
+<div class="">
+  test
+</div>
+<div class="w-full py-2">
+  <div class="container mx-auto flex justify-center gap-5">
+    <p-button tooltipPosition="top" pTooltip="Settings" icon="pi pi-cog" [outlined]="true" [rounded]="true" />
+    <p-button tooltipPosition="top" pTooltip="Toggle Audio" icon="pi pi-microphone" [outlined]="true"
+      [rounded]="true" />
+    <p-button tooltipPosition="top" pTooltip="Toggle Video" icon="pi pi-video" [outlined]="true" [rounded]="true" />
+    <p-button tooltipPosition="top" pTooltip="Present Screen" icon="pi pi-desktop" [outlined]="true"
+      [rounded]="true" />
+    <p-divider layout="vertical" />
+    <p-button tooltipPosition="top" pTooltip="Disconnect" icon="pi pi-times" severity="danger" [rounded]="true" />
   </div>
-  <ng-template pTemplate="footer">
-    <div class="w-full flex justify-center items-center">
-      <p-menu
-        appendTo="body"
-        #videoSourcesPopup
-        [popup]="true"
-        [model]="videoSourceMenuItems()"
-      />
-      <p-menu
-        appendTo="body"
-        #audioSourcesPopup
-        [popup]="true"
-        [model]="audioSourceMenuItems()"
-      />
-      <p-button
-        (onClick)="videoSourcesPopup.toggle($event)"
-        icon="pi pi-video"
-        [pTooltip]="videoSources().length <= 0 ? 'No video sources' : ''"
-        size="small"
-        [badge]="videoSources().length <= 0 ? '!' : ''"
-        badgeClass="p-badge-danger"
-      />
-
-      <p-button
-        (onClick)="audioSourcesPopup.toggle($event)"
-        icon="pi pi-microphone"
-        size="small"
-        [pTooltip]="audioSources().length <= 0 ? 'No audio sources' : ''"
-        tooltipPosition="bottom"
-        [badge]="audioSources().length <= 0 ? '!' : ''"
-        badgeClass="p-badge-danger"
-      />
-    </div>
-  </ng-template>
-</p-dialog> -->
+</div>

@@ -1,4 +1,4 @@
-import { ILoginRequest } from "@chattr/interfaces";
+import { ILoginRequest, ISignupRequest } from "@chattr/interfaces";
 
 export class SetAudioDevice {
   static type = '[Device] Set Audio device';
@@ -17,6 +17,11 @@ export class SaveDeviceConfig {
 export class SignIn implements ILoginRequest {
   static type = '[User] Sign in';
   constructor(readonly email: string, readonly password: string) { }
+}
+
+export class SignUp implements ISignupRequest {
+  static type = '[User] Sign up';
+  constructor(readonly email: string, readonly name: string, readonly password: string) { }
 }
 
 export class SignOut {

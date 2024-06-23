@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { Action, State, StateContext } from '@ngxs/store';
-import { LoadRooms, SaveDeviceConfig, SetAudioDevice, SetVideoDevice } from '../actions';
+import { CreateRoom, LoadRooms, SaveDeviceConfig, SetAudioDevice, SetVideoDevice } from '../actions';
 import { RoomService } from '../services/room.service';
 import { Room } from '@chattr/interfaces';
 import { tap } from 'rxjs';
@@ -18,7 +18,7 @@ export type RoomStateModel = {
 
 @Injectable()
 @State<RoomStateModel>({
-  name: 'devices',
+  name: 'room',
   defaults: {
     rooms: [],
     deviceConfig: {
@@ -29,6 +29,13 @@ export type RoomStateModel = {
 export class RoomState {
 
   private readonly roomService = inject(RoomService);
+
+  @Action(CreateRoom, { cancelUncompleted: true })
+  onCreateRoom(ctx: StateContext<RoomStateModel>, action: CreateRoom) {
+    return this.roomService.createRoom(action.name).pipe(
+      tap(() => ctx.dispatch(LoadRooms))
+    )
+  }
 
   @Action(LoadRooms, { cancelUncompleted: true })
   onLoadRooms(ctx: StateContext<RoomStateModel>) {

@@ -1,0 +1,88 @@
+<!-- <p-toast /> -->
+<p-tabView>
+    <p-tabPanel header="Sign up">
+        <div class="w-full space-y-2">
+            <form (ngSubmit)="onSignUpFormSubmit()" [formGroup]="signUpForm" class="py-3 pt-4 space-y-2">
+                <div>
+                    <label for="new_name">Name <span class="text-red-500">*</span></label>
+                    <input id="new_name" pInputText formControlName="name" class="w-full" />
+                    @if(signUpForm.controls.name.invalid && signUpForm.controls.name.dirty) {
+                    @if(signUpForm.controls.name.hasError('required')) {
+                    <span class="block text-red-500 text-xs">
+                        This field is required
+                    </span>
+                    }
+                    }
+                </div>
+                <div>
+                    <label for="new_email">Email <span class="text-red-500">*</span></label>
+                    <input formControlName="email" class="inline-block w-full p-inputtext-sm" autocomplete="username"
+                        type="email" id="new_email" pInputText>
+                    @if(signUpForm.controls.email.invalid && signUpForm.controls.email.dirty) {
+                    <span class="block text-red-500 text-xs">
+                        @if(signUpForm.controls.email.hasError('required')) {
+                        This field is required
+                        }
+                        @else if (signUpForm.controls.email.hasError('email')) {
+                        Invalid email address
+                        }
+                    </span>
+                    }
+                </div>
+                <div id="pass-panel w-full">
+                    <label for="password">Password <span class="text-red-500">*</span></label>
+                    <input class="p-inputtext-sm inline-block w-full" formControlName="password" type="password"
+                        pPassword autocomplete="new-password" id="password" />
+                    @if(signUpForm.controls.password.invalid && signUpForm.controls.password.dirty) {
+                    @if(signUpForm.controls.password.hasError('required')) {
+                    <span class="block text-red-500 text-xs">
+                        This field is required
+                    </span>
+                    }
+                    }
+                </div>
+                <div class="w-full flex justify-center">
+                    <p-button size="small" loadingIcon="pi pi-spinner pi-spin" [loading]="signingUp() ?? false"
+                        [disabled]="signingUp() || signUpForm.invalid" type="submit" label="Continue" />
+                </div>
+            </form>
+        </div>
+    </p-tabPanel>
+    <p-tabPanel header=" Sign in">
+        <div class="w-full space-y-2">
+            <form (ngSubmit)="onFormSubmit()" [formGroup]="form" class="py-3 pt-4 space-y-5" id="authForm">
+                <!-- <span class="text-red-500 text-sm gap-2 flex items-center">
+      <i class="pi pi-info-circle"></i> error message
+    </span> -->
+                <div>
+                    <label for="email">Email</label>
+                    <input formControlName="email" class="inline-block w-full p-inputtext-sm"
+                        autocomplete="current-username" type="email" id="email" pInputText>
+                    @if(form.controls.email.invalid && form.controls.email.dirty) {
+                    @if(form.controls.email.hasError('required')) {
+                    <span class="block text-red-500 text-xs">
+                        This field is required
+                    </span>
+                    }
+                    }
+                </div>
+                <div id="pass-panel w-full">
+                    <label for="password">Password</label>
+                    <input class="p-inputtext-sm inline-block w-full" formControlName="password" type="password"
+                        pPassword autocomplete="current-password" id="password" />
+                    @if(form.controls.password.invalid && form.controls.password.dirty) {
+                    @if(form.controls.password.hasError('required')) {
+                    <span class="block text-red-500 text-xs">
+                        This field is required
+                    </span>
+                    }
+                    }
+                </div>
+                <div class="w-full flex justify-center">
+                    <p-button size="small" loadingIcon="pi pi-spinner pi-spin" [loading]="signingIn() ?? false"
+                        [disabled]="signingIn() || form.invalid" type="submit" label="Continue with Email" />
+                </div>
+            </form>
+        </div>
+    </p-tabPanel>
+</p-tabView>

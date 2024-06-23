@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, ClassSerializerInterceptor, Controller, Get, Post, UseGuards, UseInterceptors } from '@nestjs/common';
 import { Ctx } from '../decorators/room.decorator';
 import { JwtGuard } from '../guards/jwt.guard';
 import { UserEntity } from '../models';
@@ -10,6 +10,7 @@ export class RoomController {
 
   @Get()
   @UseGuards(JwtGuard)
+  @UseInterceptors(ClassSerializerInterceptor)
   async getRooms(@Ctx('user') user: UserEntity) {
     return await this.roomService.getSubscribedRoomsFor(user.id);
   }
@@ -20,6 +21,6 @@ export class RoomController {
     @Body() { name }: { name: string },
     @Ctx('user') e: UserEntity
   ) {
-    return await this.roomService.createRoom(name, e);
+    await this.roomService.createRoom(name, e);
   }
 }
