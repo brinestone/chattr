@@ -34,36 +34,4 @@ export class UserService {
   async findUserByEmailAsync(email: string) {
     return await this.userModel.findOne({ email }).exec();
   }
-
-  async validateCredentials({ email, password }: ILoginRequest) {
-    const userDoc = await this.userModel.findOne({
-      email
-    });
-
-    const authError = new Error('Invalid email or password');
-
-    if (!userDoc) throw authError;
-
-    const passwordVerified = await compare(password, userDoc.passwordHash);
-
-    if (!passwordVerified) throw authError;
-
-    return userDoc;
-  }
-
-  async loginUser({ email, password }: ILoginRequest) {
-    const userDoc = await this.userModel.findOne({
-      email
-    });
-
-    const authError = new Error('Invalid email or password');
-
-    if (!userDoc) throw authError;
-
-    const passwordVerified = await compare(password, userDoc.passwordHash);
-
-    if (!passwordVerified) throw authError;
-
-    return userDoc._id.toString();
-  }
 }

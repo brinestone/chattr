@@ -1,11 +1,42 @@
 import { Selector, createPropertySelectors } from "@ngxs/store";
 import { UserState, UserStateModel } from "./user.state";
 import { RoomState, RoomStateModel } from "./room.state";
-import { Room } from "@chattr/interfaces";
+import { ConnectedRoom, Room, RoomMemberSession } from "@chattr/interfaces";
 
 export class Selectors {
     private static userSlices = createPropertySelectors<UserStateModel>(UserState);
     private static roomSlices = createPropertySelectors<RoomStateModel>(RoomState);
+
+    @Selector([Selectors.roomSlices.deviceConfig])
+    static videoInDevice({ video }: {
+        audio?: string | undefined;
+        video?: string | undefined;
+        unconfigured: boolean;
+    }) {
+        return video;
+    }
+
+    @Selector([Selectors.roomSlices.deviceConfig])
+    static audioInDevice({ audio }: {
+        audio?: string | undefined;
+        video?: string | undefined;
+        unconfigured: boolean;
+    }) {
+        return audio;
+    }
+
+    @Selector([Selectors.roomSlices.connectedRoom])
+    static producibleSession(room?: ConnectedRoom) {
+        return room?.session;
+    }
+
+    @Selector([Selectors.roomSlices.connectedRoom])
+    static allSessions(room?: ConnectedRoom) {
+        const ans = Array<RoomMemberSession>();
+        if (room?.session) ans.push(room.session);
+        ans.push(...(room?.otherSessions ?? []));
+        return ans;
+    }
 
     @Selector([Selectors.userSlices.accessToken])
     static accessToken(token?: string) {
@@ -13,7 +44,7 @@ export class Selectors {
     }
 
     @Selector([Selectors.roomSlices.deviceConfig])
-    static devicesConfigured({unconfigured}: {
+    static devicesConfigured({ unconfigured }: {
         audio?: string | undefined;
         video?: string | undefined;
         unconfigured: boolean;

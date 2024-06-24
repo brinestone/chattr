@@ -1,12 +1,8 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Room } from '@chattr/interfaces';
-import { Device } from 'mediasoup-client';
+import { Room, RoomMemberSession, Signaling } from '@chattr/interfaces';
 import {
-  DtlsParameters,
-  MediaKind,
-  RtpParameters,
-  Transport,
+  MediaKind
 } from 'mediasoup-client/lib/types';
 import {
   Observable,
@@ -23,6 +19,8 @@ import {
 import { Socket, io } from 'socket.io-client';
 import { environment } from '../../environments/environment.development';
 import { parseHttpClientError } from '../util';
+import { Store } from '@ngxs/store';
+import { ServerError, UpdateConnectionStatus } from '../actions';
 
 export type RoomEvent<T = any> = {
   event: 'error' | 'message';
@@ -41,9 +39,37 @@ export type MediaDevice = {
 })
 export class RoomService {
   private readonly httpClient = inject(HttpClient);
+  private readonly store = inject(Store);
   private socket?: Socket;
-  private device: Device = new Device();
-  private sendTransport?: Transport;
+  private socketInit = false;
+
+  async createConsumerFor(producerId: string, sessionId: string) {
+    this.assertSocket();
+    return await this.socket!.emitWithAck(Signaling.CreateConsumer, { producerId, sessionId });
+  }
+
+  async leaveSession(roomId: string, sessionId: string) {
+    this.assertSocket();
+    this.socket!.emit(Signaling.LeaveSession, { roomId, sessionId });
+  }
+
+  assertRoomSession(roomId: string) {
+    return this.httpClient.get<RoomMemberSession>(`${environment.backendOrigin}/rooms/${roomId}/session`).pipe(
+      catchError(parseHttpClientError)
+    );
+  }
+
+  getConnectableSessions(roomId: string) {
+    return this.httpClient.get<RoomMemberSession[]>(`${environment.backendOrigin}/rooms/${roomId}/connectable-sessions`).pipe(
+      catchError(parseHttpClientError)
+    );
+  }
+
+  getRoomInfo(roomId: string) {
+    return this.httpClient.get<Room>(`${environment.backendOrigin}/rooms/${roomId}`).pipe(
+      catchError(parseHttpClientError)
+    );
+  }
 
   findMediaDevices() {
     return from(navigator.mediaDevices.enumerateDevices()).pipe(
@@ -63,103 +89,55 @@ export class RoomService {
   }
 
   createRoom(name: string) {
-    return this.httpClient.post<Room>(`${environment.backendOrigin}/rooms`, { name }).pipe(
+    return this.httpClient.post(`${environment.backendOrigin}/rooms`, { name }).pipe(
       catchError(parseHttpClientError)
     );
   }
 
-  private assertSocket(userIdToken: string) {
-    if (!this.socket) {
-      this.socket = io(`${environment.backendOrigin}`, {
+  private assertSocket() {
+    if (!this.socket) throw new Error('No connection has not been established with the server');
+  }
+
+  establishConnection(authToken?: string) {
+    if (!this.socketInit) {
+      this.socket = io(`${environment.backendOrigin}/`, {
         transports: ['websocket'],
-        query: {
-          token: userIdToken,
-        },
+        auth: {
+          authorization: authToken
+        }
       });
-      this.socket.on('errors', (data) => {
-        console.error(data);
+      this.socketInit = true;
+
+      this.socket.on('connect', () => {
+        this.store.dispatch(new UpdateConnectionStatus('connected'));
       });
+
+      this.socket.on('reconnect', () => {
+        this.store.dispatch(new UpdateConnectionStatus('reconnecting'));
+      });
+
+      this.socket.on('disconnect', (reason) => {
+        this.store.dispatch(new UpdateConnectionStatus('disconnected', reason));
+      });
+
+      this.socket.on('errors', ({ errorMessage }: { errorMessage: string }) => {
+        this.store.dispatch(new ServerError(errorMessage));
+      });
+    } else if (!this.socket?.connected) {
+      this.socket?.connect();
     }
   }
 
-  joinRoom(id: string, userIdToken: string) {
-    this.assertSocket(userIdToken);
-    return from(
-      this.socket!.emitWithAck('init_session', [{ roomId: id }])
-    ).pipe(
-      switchMap(async ({ rtpCapabilities, transportParams, sessionId }) => {
-        await this.device.load({ routerRtpCapabilities: rtpCapabilities });
-        this.sendTransport = this.device.createSendTransport(transportParams);
-        this.sendTransport.on(
-          'connect',
-          ({ dtlsParameters }, callback, errBack) => {
-            this.transportConnectCallback(
-              id,
-              sessionId,
-              dtlsParameters,
-              callback,
-              errBack
-            );
-          }
-        );
-        this.sendTransport.on(
-          'produce',
-          (
-            { kind, rtpParameters },
-            callback: (arg: { id: string }) => void,
-            errBack: (error: Error) => void
-          ) => {
-            this.transportProduceCallback(
-              id,
-              sessionId,
-              kind,
-              rtpParameters,
-              callback,
-              errBack
-            );
-          }
-        );
-      })
-    );
-  }
-
-  private async transportProduceCallback(
-    roomId: string,
-    sessionId: string,
-    kind: MediaKind,
-    rtpParameters: RtpParameters,
-    callback: (arg: { id: string }) => void,
-    errBack: (arg: Error) => void
-  ) {
-    try {
-      const { producerId } = await this.socket!.emitWithAck(
-        'produce',
-        { roomId },
-        { kind, sessionId, rtpParameters }
-      );
-      callback({ id: producerId });
-    } catch (error) {
-      errBack(error as Error);
+  closeExistingConnection() {
+    if (this.socket?.connected) {
+      this.socket.close();
     }
   }
 
-  private async transportConnectCallback(
-    roomId: string,
-    sessionId: string,
-    dtlsParameters: DtlsParameters,
-    callback: () => void,
-    errBack: (error: Error) => void
-  ) {
-    try {
-      await this.socket!.emitWithAck(
-        'connect_transport',
-        { roomId },
-        { dtlsParameters, sessionId }
-      );
-      callback();
-    } catch (error) {
-      errBack(error as Error);
-    }
+  async joinSession(roomId: string, sessionId: string) {
+    this.assertSocket();
+
+    return await this.socket!.emitWithAck(Signaling.JoinSession, { roomId, sessionId });
   }
 
   getRooms() {

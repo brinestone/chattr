@@ -2,7 +2,7 @@ import { Injectable, inject } from "@angular/core";
 import { Action, State, StateContext, Store } from "@ngxs/store";
 import { patch } from "@ngxs/store/operators";
 import { tap } from "rxjs";
-import { SessionUpdated, SignIn, SignOut, SignUp } from "../actions";
+import { UserSessionUpdated, SignIn, SignOut, SignUp } from "../actions";
 import { UserService } from "../services/user.service";
 import { Selectors } from "./selectors";
 
@@ -25,7 +25,7 @@ export class UserState {
         setTimeout(() => {
             store.select(Selectors.accessToken).subscribe(token => {
                 const signedIn = token ? this.userService.isSignedIn(token) : false;
-                store.dispatch(new SessionUpdated(signedIn));
+                store.dispatch(new UserSessionUpdated(signedIn));
             });
         }, 10);
     }
@@ -40,8 +40,8 @@ export class UserState {
         ctx.setState({ isSignedIn: false });
     }
 
-    @Action(SessionUpdated)
-    onSessionUpdated(ctx: StateContext<UserStateModel>, { signedIn }: SessionUpdated) {
+    @Action(UserSessionUpdated)
+    onSessionUpdated(ctx: StateContext<UserStateModel>, { signedIn }: UserSessionUpdated) {
         ctx.setState(patch({ isSignedIn: signedIn }))
     }
 
@@ -49,7 +49,7 @@ export class UserState {
     onSignIn(ctx: StateContext<UserStateModel>, action: SignIn) {
         return this.userService.signIn(action).pipe(
             tap(({ access_token }) => ctx.setState(patch({ accessToken: access_token }))),
-            tap(() => ctx.dispatch(new SessionUpdated(true))),
+            tap(() => ctx.dispatch(new UserSessionUpdated(true))),
         );
     }
 }

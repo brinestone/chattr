@@ -1,0 +1,10 @@
+:host {
+  display: block;
+}
+
+::ng-deep {
+  p-card .p-card-body,
+  p-card .p-card-content {
+    @apply w-full h-full block;
+  }
+}

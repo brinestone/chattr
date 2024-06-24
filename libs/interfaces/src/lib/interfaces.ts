@@ -11,14 +11,17 @@ export interface User extends Entity {
   name: string;
 }
 
-export type RoomMemberRole = 'member' | 'owner' | 'moderator';
+export type RoomMemberRole = 'guest' | 'owner' | 'moderator';
 
 export interface RoomMemberSession extends Entity {
   serverIp: string;
   clientIp: string;
   endDate?: Date;
   member?: string;
+  userId?: string;
   producers: string[];
+  connected: boolean;
+  displayName: string;
 }
 
 export interface RoomMember extends Entity {
@@ -47,4 +50,22 @@ export interface ISignupRequest {
 
 export interface ILoginResponse {
   access_token: string;
+}
+
+export type ConnectionStatus = 'connected' | 'reconnecting' | 'disconnected' | 'idle';
+
+export type ConnectedRoom = {
+  info: Room;
+  session: RoomMemberSession;
+  otherSessions: RoomMemberSession[];
+  connectionStatus: ConnectionStatus;
+}
+
+export enum Signaling {
+  JoinSession = 'JOIN_SESSION',
+  LeaveSession = 'LEAVE_SESSION',
+  SessionClosed = 'SESSION_CLOSED',
+  ConnectTransport = 'CONNECT_TRANSPORT',
+  SessionStarted = 'SESSION_STARTED',
+  CreateConsumer = 'CREATE_CONSUMER'
 }

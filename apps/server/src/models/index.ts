@@ -66,7 +66,7 @@ export class RoomMemberEntity extends BaseEntity implements RoomMember {
   })
   role: RoomMemberRole;
 
-  @Prop({ ref: UserEntity.name, type: MongooseSchema.Types.ObjectId, _id: false })
+  @Prop({ required: true, ref: UserEntity.name, type: MongooseSchema.Types.ObjectId, _id: false })
   @Transform(
     ({ value }) => {
       return (value as HydratedDocument<UserEntity>)._id.toString();
@@ -147,6 +147,9 @@ export class RoomSessionEntity extends BaseEntity implements RoomMemberSession {
   @Prop()
   endDate?: Date;
 
+  @Prop({ default: true })
+  connected: boolean;
+
   @Prop({ _id: false, type: MongooseSchema.Types.ObjectId, ref: RoomMemberEntity.name })
   @Transform(
     ({ value }) => {
@@ -163,6 +166,13 @@ export class RoomSessionEntity extends BaseEntity implements RoomMemberSession {
     super();
     if (data) Object.assign(this, data);
   }
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: UserEntity.name, _id: false, required: true })
+  @Transform(({ value }) => (value as MongooseSchema.Types.ObjectId).toString(), { toPlainOnly: true })
+  userId?: string;
+
+  @Prop({ required: true })
+  displayName: string;
 }
 
 export const RoomSessionSchema = SchemaFactory.createForClass(
@@ -184,3 +194,8 @@ export const SessionSchema = SchemaFactory.createForClass(UserSession).pre('save
   this.increment();
   return next();
 });
+
+export type Principal = {
+  email: string;
+  userId: string;
+}

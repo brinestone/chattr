@@ -7,7 +7,7 @@ export class LoggerMiddleware implements NestMiddleware {
 
     use(req: Request, res: Response, next: (error?: any) => void) {
         res.on('finish', () => {
-            const msg = `HTTP/${req.httpVersion} ${req.url} -> ${res.statusCode}`;
+            const msg = `${req.method} HTTP/${req.httpVersion} ${req.url} -> ${res.statusCode}`;
             if (res.statusCode < 400)
                 this.logger.verbose(msg);
             else if (res.statusCode < 500)

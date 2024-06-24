@@ -21,9 +21,10 @@ export class AuthService {
     }
 
     async loginUser(user: UserEntity) {
-        const { email, id } = user;
+        const { email, id, name } = user;
         const token = await this.jwtService.signAsync({
             username: email,
+            displayName: name,
             sub: id
         });
 
