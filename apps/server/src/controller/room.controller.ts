@@ -1,13 +1,22 @@
 import { Body, ClassSerializerInterceptor, Controller, Get, Ip, Param, Post, UseGuards, UseInterceptors } from '@nestjs/common';
 import { Ctx } from '../decorators/room.decorator';
 import { JwtGuard } from '../guards/jwt.guard';
-import { Principal, UserEntity } from '../models';
+import { Principal } from '../models';
 import { RoomService } from '../services/room.service';
 import { UserService } from '../services/user.service';
 
 @Controller('rooms')
 export class RoomController {
   constructor(private roomService: RoomService, private userService: UserService) { }
+
+  @Get('sessions/:session')
+  @UseGuards(JwtGuard)
+  @UseInterceptors(ClassSerializerInterceptor)
+  async findRoomSession(
+    @Param('session') sessionId: string
+  ) {
+    return await this.roomService.findSessionById(sessionId);
+  }
 
   @Get(':id/connectable-sessions')
   @UseGuards(JwtGuard)

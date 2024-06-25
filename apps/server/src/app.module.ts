@@ -14,6 +14,7 @@ import { AuthService } from './services/auth.service';
 import { RoomService } from './services/room.service';
 import { UserService } from './services/user.service';
 import { AuthController } from './controller/auth.controller';
+// import { EventEmitterModule } from '@nestjs/event-emitter';
 
 @Global()
 @Module({
@@ -46,6 +47,7 @@ class DataModule { }
         } as JwtModuleOptions;
       }
     }),
+    // EventEmitterModule.forRoot(),
     MongooseModule.forRootAsync({
       imports: [
         ConfigModule

@@ -122,12 +122,45 @@ export class ServerSideConsumerCreated {
   constructor(readonly id: string, readonly kind: MediaKind, readonly sessionId: string, readonly producerId: string, readonly rtpParameters: RtpParameters) { }
 }
 
+export class CloseServerSideConsumer {
+  static type = `[Room] Close Server-side Consumer`;
+  constructor(readonly consumerId: string) { }
+}
+
 export class ToggleConsumerStream {
   static type = `[Room] Toggle Consumer Stream`;
   constructor(readonly consumerId: string) { }
 }
 
-export class NewSessionProducer {
-  static type = `[Room] Session Updated - New Session Producer`;
+export class ToggleAudio {
+  static type = '[Device] Toggle Audio';
+}
+
+export class ToggleVideo {
+  static type = '[Device] Toggle Video';
+}
+
+export class CloseServerSideProducer {
+  static type = '[Room] Close Server-side Producer';
+  constructor(readonly sessionId: string, readonly producerId: string) { }
+}
+
+export class RemoteSessionClosed {
+  static type = '[Room] Remote Session Closed';
+  constructor(readonly sessionId: string) { }
+}
+
+export class RemoteSessionOpened {
+  static type = '[Room] Remote Session opened';
+  constructor(readonly sessionId: string) { }
+}
+
+export class RemoteProducerOpened {
+  static type = '[Room] Remote Producer opened';
+  constructor(readonly sessionId: string, readonly producerId: string) { }
+}
+
+export class RemoteProducerClosed {
+  static type = '[Room] Remote Producer closed';
   constructor(readonly sessionId: string, readonly producerId: string) { }
 }

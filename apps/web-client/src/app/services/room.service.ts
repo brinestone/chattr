@@ -1,26 +1,19 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Room, RoomMemberSession, Signaling } from '@chattr/interfaces';
+import { Store } from '@ngxs/store';
 import {
-  MediaKind
+  DtlsParameters,
+  MediaKind,
+  RtpParameters
 } from 'mediasoup-client/lib/types';
 import {
-  Observable,
-  catchError,
-  filter,
-  from,
-  identity,
-  map,
-  of,
-  switchMap,
-  tap,
-  toArray
+  catchError
 } from 'rxjs';
 import { Socket, io } from 'socket.io-client';
 import { environment } from '../../environments/environment.development';
+import { RemoteProducerClosed, RemoteProducerOpened, RemoteSessionClosed, RemoteSessionOpened, ServerError, UpdateConnectionStatus } from '../actions';
 import { parseHttpClientError } from '../util';
-import { Store } from '@ngxs/store';
-import { ServerError, UpdateConnectionStatus } from '../actions';
 
 export type RoomEvent<T = any> = {
   event: 'error' | 'message';
@@ -43,6 +36,26 @@ export class RoomService {
   private socket?: Socket;
   private socketInit = false;
 
+  closeConsumer(consumerId: string) {
+    this.assertSocket();
+    this.socket!.emit(Signaling.CloseConsumer, { consumerId });
+  }
+
+  async closeProducer(sessionId: string, producerId: string) {
+    this.assertSocket();
+    return await this.socket!.emitWithAck(Signaling.CloseProducer, { sessionId, producerId });
+  }
+
+  async createProducer(sessionId: string, rtpParameters: RtpParameters, kind: MediaKind) {
+    this.assertSocket();
+    return await this.socket!.emitWithAck(Signaling.CreateProducer, { sessionId, rtpParameters, kind });
+  }
+
+  async connectTransport(sessionId: string, dtlsParameters: DtlsParameters) {
+    this.assertSocket();
+    return await this.socket!.emitWithAck(Signaling.ConnectTransport, { sessionId, dtlsParameters });
+  }
+
   async createConsumerFor(producerId: string, sessionId: string) {
     this.assertSocket();
     return await this.socket!.emitWithAck(Signaling.CreateConsumer, { producerId, sessionId });
@@ -51,6 +64,12 @@ export class RoomService {
   async leaveSession(roomId: string, sessionId: string) {
     this.assertSocket();
     this.socket!.emit(Signaling.LeaveSession, { roomId, sessionId });
+  }
+
+  findRoomSession(sessionId: string) {
+    return this.httpClient.get<RoomMemberSession>(`${environment.backendOrigin}/rooms/sessions/${sessionId}`).pipe(
+      catchError(parseHttpClientError)
+    );
   }
 
   assertRoomSession(roomId: string) {
@@ -70,8 +89,6 @@ export class RoomService {
       catchError(parseHttpClientError)
     );
   }
-
-  
 
   createRoom(name: string) {
     return this.httpClient.post(`${environment.backendOrigin}/rooms`, { name }).pipe(
@@ -95,6 +112,7 @@ export class RoomService {
 
       this.socket.on('connect', () => {
         this.store.dispatch(new UpdateConnectionStatus('connected'));
+        this.subscribeToMessages
       });
 
       this.socket.on('reconnect', () => {
@@ -111,6 +129,26 @@ export class RoomService {
     } else if (!this.socket?.connected) {
       this.socket?.connect();
     }
+  }
+
+  private subscribeToMessages() {
+    const socket = this.socket as Socket;
+
+    socket.on(Signaling.SessionClosed, ({ sessionId }: { sessionId: string }) => {
+      this.store.dispatch(new RemoteSessionClosed(sessionId));
+    });
+
+    socket.on(Signaling.SessionOpened, ({ sessionId }: { sessionId: string }) => {
+      this.store.dispatch(new RemoteSessionOpened(sessionId));
+    });
+
+    socket.on(Signaling.ProducerOpened, ({ producerId, sessionId }: { producerId: string, sessionId: string }) => {
+      this.store.dispatch(new RemoteProducerOpened(sessionId, producerId));
+    });
+
+    socket.on(Signaling.ProducerClosed, ({ producerId, sessionId }: { producerId: string, sessionId: string }) => {
+      this.store.dispatch(new RemoteProducerClosed(sessionId, producerId));
+    });
   }
 
   closeExistingConnection() {

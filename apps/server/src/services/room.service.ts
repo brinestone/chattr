@@ -23,12 +23,9 @@ import {
   forkJoin,
   from,
   identity,
-  map,
   mergeMap,
   of,
-  take,
-  tap,
-  throwError
+  take
 } from 'rxjs';
 import { RoomEntity, RoomMemberEntity, RoomSessionEntity, UserEntity } from '../models';
 
@@ -87,6 +84,20 @@ export class RoomService {
 
   private get nextWorker() {
     return this.workers[++this.nextWorkerIndex % this.workers.length];
+  }
+
+  async findSessionById(sessionId: string) {
+    const sessionDoc = await this.sessionModel.findById(sessionId);
+    if (!sessionDoc) throw new NotFoundException('Session not found');
+
+    return new RoomSessionEntity(sessionDoc.toObject());
+  }
+
+  closeConsumer(consumerId: string) {
+    const consumer = this.consumers[consumerId];
+    if (!consumer) throw new NotFoundException('Consumer: ' + consumerId + ' not found');
+    consumer.close();
+    delete this.consumers[consumerId];
   }
 
   async closeSession(id: string) {
@@ -299,6 +310,28 @@ export class RoomService {
     this.workers.forEach((worker) => worker.close());
   }
 
+  async closeProducer(userId: string, sessionId: string, producerId: string) {
+    const sessionDoc = await this.sessionModel.findById(sessionId);
+    const isSessionOwner = await this.isSessionOwner(sessionId, userId);
+    const hasElevatedPrivileges = await this.userHasElevatedPrivileges(sessionDoc.member);
+
+    if (!isSessionOwner && !hasElevatedPrivileges) throw new ForbiddenException('Operation denied!');
+
+    const producer = this.producers[producerId];
+    if (!producer) {
+      this.logger.warn('Producer::' + producerId + ' not found or already closed');
+    }
+
+    producer.close();
+  }
+
+  private async userHasElevatedPrivileges(memberId: string) {
+    const memberDoc = await this.memberModel.findById(memberId);
+    if (!memberDoc) return false;
+
+    return !memberDoc.isBanned && (memberDoc.role == 'owner' || memberDoc.role == 'moderator');
+  }
+
   private async isUserARoomMember(userId: string, roomId: string) {
     const membership = await this.memberModel.exists({
       isBanned: { $ne: true },
@@ -330,35 +363,37 @@ export class RoomService {
     return { isSessionOwner, params: { rtpCapabilities, transportParams: { iceParameters, iceCandidates, dtlsParameters, id } } };
   }
 
-  createProducer({
-    sessionId,
-    rtpParameters,
-    kind,
-  }: {
-    rtpParameters: RtpParameters;
-    kind: MediaKind;
-    sessionId: string;
-  }) {
-    const transport = this.webRtcTransports[sessionId];
+  async createProducer(sessionId: string, userId: string, rtpParameters: RtpParameters, kind: MediaKind) {
+    const transportId = computeTransportId(userId, sessionId);
+    const transport = this.webRtcTransports[transportId];
     if (!transport) {
-      return throwError(() => new Error('Transport already closed'));
+      throw new Error('Transport not found or closed');
     }
 
-    return from(transport.produce({ kind, rtpParameters })).pipe(
-      tap(async (producer) => {
-        this.producers[producer.id] = producer;
-        await this.sessionModel.updateOne(
-          { _id: sessionId },
-          {
-            $inc: { __v: 1 },
-            $push: {
-              producers: producer.id,
-            },
+    const producer = await transport.produce({ kind, rtpParameters });
+    this.producers[producer.id] = producer;
+    const sessionDoc = await this.sessionModel.findById(sessionId).exec();
+    await sessionDoc.updateOne({
+      $inc: { __v: 1 },
+      $push: {
+        producers: producer.id
+      }
+    }).exec();
+
+    producer.observer.on('close', async () => {
+      const { roomId } = await this.memberModel.findById(sessionDoc.member).exec();
+      const index = sessionDoc.producers.findIndex(x => x == producer.id);
+      if (index >= 0)
+        await sessionDoc.updateOne({
+          $inc: { __v: 1 },
+          $set: {
+            producers: sessionDoc.producers.filter(x => x != producer.id)
           }
-        );
-      }),
-      map(({ id }) => ({ producerId: id }))
-    );
+        });
+      delete this.producers[producer.id];
+    })
+
+    return { producerId: producer.id };
   }
 
   async connectTransport(sessionId: string, dtlsParameters: DtlsParameters, userId: string) {

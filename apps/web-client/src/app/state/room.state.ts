@@ -1,10 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { ConnectedRoom, ConnectionStatus, Room } from '@chattr/interfaces';
 import { Action, NgxsOnInit, State, StateContext, select } from '@ngxs/store';
-import { patch } from '@ngxs/store/operators';
+import { append, patch, removeItem } from '@ngxs/store/operators';
 import { EMPTY, concatMap, forkJoin, from, of, switchMap, tap, throwError } from 'rxjs';
-import { ClearConnectedRoom, ConnectToRoom, ConnectedRoomChanged, CreateRoom, CreateServerSideConsumer, DevicesFound, FindDevices, JoinSession, LeaveSession, LoadRooms, ServerSideConsumerCreated, SessionJoined, UpdateConnectionStatus } from '../actions';
-import { DeviceService } from '../services/device.service';
+import { ClearConnectedRoom, CloseServerSideConsumer, CloseServerSideProducer, ConnectToRoom, ConnectTransport, ConnectedRoomChanged, CreateRoom, CreateServerSideConsumer, CreateServerSideProducer, JoinSession, LeaveSession, LoadRooms, RemoteSessionClosed, RemoteSessionOpened, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, TransportConnected, UpdateConnectionStatus } from '../actions';
 import { RoomService } from '../services/room.service';
 import { Selectors } from './selectors';
 
@@ -12,6 +11,8 @@ export type RoomStateModel = {
   rooms: Room[];
   connectedRoom?: ConnectedRoom;
 };
+
+type Context = StateContext<RoomStateModel>;
 
 @Injectable()
 @State<RoomStateModel>({
@@ -23,28 +24,72 @@ export type RoomStateModel = {
 export class RoomState implements NgxsOnInit {
   private readonly accessToken = select(Selectors.accessToken);
   private readonly roomService = inject(RoomService);
-  private readonly deviceService = inject(DeviceService);
 
-  ngxsOnInit(ctx: StateContext<RoomStateModel>): void {
+  ngxsOnInit(ctx: Context): void {
     ctx.dispatch(ClearConnectedRoom);
   }
 
-  @Action(FindDevices)
-  findDevices(ctx: StateContext<RoomStateModel>) {
-    return this.deviceService.findMediaDevices().pipe(
-      tap(devices => ctx.dispatch(new DevicesFound(devices)))
+  @Action(RemoteSessionOpened)
+  onRemoteSessionOpened(ctx: Context, { sessionId }: RemoteSessionOpened) {
+    const { connectedRoom } = ctx.getState();
+    if (!connectedRoom) return throwError(() => new Error('No connected room'));
+    return this.roomService.findRoomSession(sessionId).pipe(
+      tap(session => {
+        ctx.setState(patch({
+          connectedRoom: patch({
+            otherSessions: append([session])
+          })
+        }))
+      })
+    )
+  }
+
+  @Action(RemoteSessionClosed)
+  onRemoteSessionClosed(ctx: Context, { sessionId }: RemoteSessionClosed) {
+    ctx.setState(patch({
+      connectedRoom: patch({
+        otherSessions: removeItem(s => s.id == sessionId)
+      })
+    }));
+  }
+
+  @Action(CloseServerSideConsumer)
+  oncloseServerSideConsumer(_: Context, { consumerId }: CloseServerSideConsumer) {
+    this.roomService.closeConsumer(consumerId);
+  }
+
+  @Action(CloseServerSideProducer)
+  onCloseServerSideProducer(_: Context, { producerId, sessionId }: CloseServerSideProducer) {
+    return from(this.roomService.closeProducer(sessionId, producerId));
+  }
+
+  @Action(CreateServerSideProducer)
+  onCreateServerSideProducer(ctx: Context, { kind, rtpParameters, sessionId }: CreateServerSideProducer) {
+    const { connectedRoom } = ctx.getState();
+    if (!connectedRoom) return throwError(() => new Error('No connected room'));
+    return from(this.roomService.createProducer(sessionId, rtpParameters, kind)).pipe(
+      tap(({ producerId }) => ctx.dispatch(new ServerSideProducerCreated(producerId, sessionId, kind)))
+    )
+  }
+
+  @Action(ConnectTransport)
+  onConnectTransport(ctx: Context, { dtlsParameters, sessionId }: ConnectTransport) {
+    const { connectedRoom } = ctx.getState();
+    if (!connectedRoom) return throwError(() => new Error('No connected room'));
+    return from(this.roomService.connectTransport(sessionId, dtlsParameters)).pipe(
+      tap(() => ctx.dispatch(new TransportConnected(sessionId)))
     );
   }
 
   @Action(CreateServerSideConsumer)
-  createServerSideConsumer(ctx: StateContext<RoomStateModel>, { producerId, sessionId }: CreateServerSideConsumer) {
+  createServerSideConsumer(ctx: Context, { producerId, sessionId }: CreateServerSideConsumer) {
     return from(this.roomService.createConsumerFor(producerId, sessionId)).pipe(
       tap(({ rtpParameters, kind, id }) => ctx.dispatch(new ServerSideConsumerCreated(id, kind, sessionId, producerId, rtpParameters)))
     );
   }
 
   @Action(UpdateConnectionStatus, { cancelUncompleted: true })
-  onConnectionStatusUpdated(ctx: StateContext<RoomStateModel>, { status, reason }: UpdateConnectionStatus) {
+  onConnectionStatusUpdated(ctx: Context, { status, reason }: UpdateConnectionStatus) {
     if (reason) return throwError(() => new Error(reason));
     ctx.setState(patch({
       connectedRoom: patch({
@@ -55,7 +100,7 @@ export class RoomState implements NgxsOnInit {
   }
 
   @Action(LeaveSession)
-  onLeaveSession(ctx: StateContext<RoomStateModel>, { id }: LeaveSession) {
+  onLeaveSession(ctx: Context, { id }: LeaveSession) {
     const connectedRoom = ctx.getState().connectedRoom;
     if (connectedRoom) {
       this.roomService.leaveSession(connectedRoom.info.id, id);
@@ -64,7 +109,7 @@ export class RoomState implements NgxsOnInit {
   }
 
   @Action(JoinSession)
-  onJoinSession(ctx: StateContext<RoomStateModel>, { id }: JoinSession) {
+  onJoinSession(ctx: Context, { id }: JoinSession) {
     const roomId = ctx.getState().connectedRoom?.info.id;
     if (!roomId) return throwError(() => 'Room not connected');
     return from(this.roomService.joinSession(roomId, id)).pipe(
@@ -73,7 +118,7 @@ export class RoomState implements NgxsOnInit {
   }
 
   @Action(ConnectedRoomChanged)
-  async initializeRoomSessions(ctx: StateContext<RoomStateModel>) {
+  async initializeRoomSessions(ctx: Context) {
     const existingConnectedRoom = ctx.getState().connectedRoom;
     if (existingConnectedRoom) {
       this.roomService.closeExistingConnection();
@@ -82,7 +127,7 @@ export class RoomState implements NgxsOnInit {
   }
 
   @Action(ClearConnectedRoom)
-  clearConnectedRoom(ctx: StateContext<RoomStateModel>) {
+  clearConnectedRoom(ctx: Context) {
     ctx.setState(patch({
       connectedRoom: undefined
     }));
@@ -91,7 +136,7 @@ export class RoomState implements NgxsOnInit {
   }
 
   @Action(ConnectToRoom, { cancelUncompleted: true })
-  fetchConnectedRoomDetails(ctx: StateContext<RoomStateModel>, { id: roomId }: ConnectToRoom) {
+  fetchConnectedRoomDetails(ctx: Context, { id: roomId }: ConnectToRoom) {
     return of(ctx.getState().rooms.find(r => r.id == roomId)).pipe(
       concatMap(existingRoom => {
         if (!existingRoom) return this.roomService.getRoomInfo(roomId);
@@ -113,14 +158,14 @@ export class RoomState implements NgxsOnInit {
   }
 
   @Action(CreateRoom, { cancelUncompleted: true })
-  onCreateRoom(ctx: StateContext<RoomStateModel>, action: CreateRoom) {
+  onCreateRoom(ctx: Context, action: CreateRoom) {
     return this.roomService.createRoom(action.name).pipe(
       tap(() => ctx.dispatch(LoadRooms))
     )
   }
 
   @Action(LoadRooms, { cancelUncompleted: true })
-  onLoadRooms(ctx: StateContext<RoomStateModel>) {
+  onLoadRooms(ctx: Context) {
     return this.roomService.getRooms().pipe(
       tap(rooms => ctx.setState(patch({
         rooms

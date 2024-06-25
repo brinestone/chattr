@@ -1,5 +1,5 @@
-import { Room, Signaling } from '@chattr/interfaces';
-import { Logger, UseFilters, UseGuards } from '@nestjs/common';
+import { Signaling } from '@chattr/interfaces';
+import { Logger, OnApplicationBootstrap, UseFilters, UseGuards } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -10,23 +10,20 @@ import {
   WebSocketServer,
   WsException
 } from '@nestjs/websockets';
-import { HydratedDocument } from 'mongoose';
+import { DtlsParameters, MediaKind, RtpCapabilities, RtpParameters } from 'mediasoup/node/lib/types';
 import { Server, Socket } from 'socket.io';
 import { Ctx } from '../decorators/room.decorator';
 import { WsExceptionFilter } from '../filters/ws-exception.filter';
 import { WsGuard } from '../guards/ws.guard';
 import { Principal } from '../models';
 import { RoomService } from '../services/room.service';
-import { DtlsParameters, RtpCapabilities } from 'mediasoup/node/lib/types';
-
-function getRoomChannel(room: HydratedDocument<Room>) {
-  return `rooms:${room._id.toString()}`;
-}
 
 @WebSocketGateway(undefined, { cors: true })
 @UseFilters(new WsExceptionFilter())
+@UseGuards(WsGuard)
 export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(AppGateway.name);
+  @WebSocketServer() private server: Server;
   constructor(private roomService: RoomService) { }
 
   handleConnection(client: Socket) {
@@ -39,13 +36,57 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const owningSession = client.data['owningSession'];
       await this.roomService.closeSession(owningSession);
       // await this.roomService.leaveSessions(roomId, client.data['sessions']);
-      client.to(roomId).emit(Signaling.SessionClosed, owningSession);
+      client.to(roomId).emit(Signaling.SessionClosed, { sessionId: owningSession });
       client.leave(roomId);
     }
     this.logger.log(`${client.id} has disconnected.`);
   }
 
-  @UseGuards(WsGuard)
+  @SubscribeMessage(Signaling.CloseConsumer)
+  handleConsumerClosing(
+    @MessageBody() { consumerId }: { consumerId: string }
+  ) {
+    try {
+      this.roomService.closeConsumer(consumerId);
+    } catch (err) {
+      this.logger.warn(err.message);
+    }
+  }
+
+  @SubscribeMessage(Signaling.CloseProducer)
+  async handleProducerClose(
+    @ConnectedSocket() socket: Socket,
+    @Ctx('user') { userId }: Principal,
+    @MessageBody() { sessionId, producerId }: { producerId: string, sessionId: string }
+  ) {
+    try {
+      await this.roomService.closeProducer(userId, sessionId, producerId);
+      const roomId = socket.data['roomId'];
+      socket.to(roomId).emit(Signaling.ProducerClosed, { sessionId, producerId });
+      return {};
+    } catch (err) {
+      throw new WsException(err);
+    }
+  }
+
+  @SubscribeMessage(Signaling.CreateProducer)
+  async handleProducerCreation(
+    @ConnectedSocket() socket: Socket,
+    @Ctx('user') principal: Principal,
+    @MessageBody() { kind, rtpParameters, sessionId }: { sessionId: string, rtpParameters: RtpParameters, kind: MediaKind }
+  ) {
+    try {
+      const ans = await this.roomService.createProducer(sessionId, principal.userId, rtpParameters, kind)
+      this.logger.verbose(`User: ${principal.userId} has created a "${kind}" producer on their session: ${sessionId}. Signaling peers...`);
+      const roomId = socket.data['roomId'];
+      socket.to(roomId).emit(Signaling.ProducerOpened, { sessionId, ...ans });
+      return ans;
+    } catch (err) {
+      throw new WsException(err);
+    }
+  }
+
+
   @SubscribeMessage(Signaling.JoinSession)
   async handleJoiningSession(
     @ConnectedSocket() socket: Socket,
@@ -66,8 +107,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @UseGuards(WsGuard)
-  // @UseFilters(new WsExceptionFilter())
+
   @SubscribeMessage(Signaling.ConnectTransport)
   async handleConnectTransport(
     @ConnectedSocket() socket: Socket,
@@ -79,16 +119,16 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
         .connectTransport(sessionId, dtlsParameters, principal.userId);
       const roomId = socket.data['roomId'];
       if (await this.roomService.isSessionOwner(sessionId, principal.userId)) {
-        this.logger.verbose('Signaling peers in room: ' + roomId);
-        socket.to(roomId).emit(Signaling.SessionStarted, { sessionId })
+        this.logger.verbose(`User: ${principal.userId} has connected their session's transport. Signaling room peers`);
+        socket.to(roomId).emit(Signaling.SessionOpened, { sessionId })
       }
+      return {};
     } catch (err) {
-      this.logger.error(err.message, err.stack);
       throw new WsException(err);
     }
   }
 
-  @UseGuards(WsGuard)
+
   @SubscribeMessage(Signaling.CreateConsumer)
   async handleCreateConsumer(
     @Ctx('user') { userId }: Principal,
@@ -97,23 +137,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       return await this.roomService.createConsumer(sessionId, userId, producerId, rtpCapabilities);
     } catch (err) {
-      this.logger.error(err.message, err.stack);
       throw new WsException(err);
     }
   }
-
-  // @UseGuards(JwtGuard, RoomGuard)
-  // @UseFilters(new WsExceptionFilter())
-  // @SubscribeMessage('produce')
-  // handleProduce(
-  //   @MessageBody()
-  //   data: { rtpParameters: RtpParameters; kind: MediaKind; sessionId: string },
-  //   @Ctx('room') room: RoomDocument,
-  //   @ConnectedSocket() socket: Socket
-  // ) {
-  //   return this.roomService.createProducer(data).pipe(
-  //     tap((data) => socket.to(getRoomChannel(room)).emit('new_producer', data)),
-  //     catchError((error: Error) => throwError(() => new WsException(error)))
-  //   );
-  // }
 }

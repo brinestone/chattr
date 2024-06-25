@@ -3,16 +3,17 @@
   'grid-rows-3': sessions().length > 6 && sessions().length < 10
 }" class="p-3 grid gap-2 grid-flow-col grid-cols-[repeat(auto-fit,minmax(300px,1fr))]">
   @for(session of sessions()|slice:0:10; track session.id) {
-  <chattr-room-member class="h-full w-full" [session]="session" />
+  <chattr-room-member (error)="onMemberSessionError($event)" class="h-full w-full" [session]="session" />
   }
 </div>
 <div class="w-full py-2">
   <div class="container mx-auto flex justify-center gap-5">
     <p-button (onClick)="showDevicesConfigSidebar = true" [severity]="devicesConfigured() ? undefined : 'danger'"
       tooltipPosition="top" pTooltip="Settings" icon="pi pi-cog" [outlined]="true" [rounded]="true" />
-    <p-button tooltipPosition="top" pTooltip="Toggle Audio" icon="pi pi-microphone" [outlined]="true"
-      [rounded]="true" />
-    <p-button tooltipPosition="top" pTooltip="Toggle Video" icon="pi pi-video" [outlined]="true" [rounded]="true" />
+    <p-button (onClick)="onToggleAudioButtonClicked()" tooltipPosition="top" pTooltip="Toggle Audio"
+      icon="pi pi-microphone" [outlined]="audioDisabled()" [rounded]="true" />
+    <p-button (onClick)="onToggleVideoButtonClicked()" tooltipPosition="top" pTooltip="Toggle Video" icon="pi pi-video"
+      [outlined]="videoDisabled()" [rounded]="true" />
     <p-button tooltipPosition="top" pTooltip="Present Screen" icon="pi pi-desktop" [outlined]="true" [rounded]="true" />
     <p-divider layout="vertical" />
     <p-button tooltipPosition="top" pTooltip="Disconnect" icon="pi pi-times" severity="danger" [rounded]="true" />

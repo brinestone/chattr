@@ -1,8 +1,8 @@
 import { CommonModule } from '@angular/common';
 import {
   Component,
-  OnInit,
   computed,
+  effect,
   inject,
   signal
 } from '@angular/core';
@@ -14,7 +14,7 @@ import {
   ReactiveFormsModule,
   Validators,
 } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Actions, dispatch, select } from '@ngxs/store';
 import { NgxJdenticonModule } from 'ngx-jdenticon';
 import { MessageService } from 'primeng/api';
@@ -49,12 +49,23 @@ import { errorToMessage, monitorAction } from '../../util';
   templateUrl: './rooms-page.component.html',
   styleUrl: './rooms-page.component.scss',
 })
-export class RoomsPageComponent implements OnInit {
+export class RoomsPageComponent {
   private readonly createRoomFn = dispatch(CreateRoom);
   private readonly loadRoomFn = dispatch(LoadRooms);
   private readonly signOutFn = dispatch(SignOut);
+  private readonly router = inject(Router);
   private readonly actions = inject(Actions);
   private readonly messageService = inject(MessageService);
+  private readonly routeParams = toSignal(inject(ActivatedRoute).queryParams);
+  readonly redirect = computed(() => {
+    const continueTo = this.routeParams()?.['continue'];
+    if (!continueTo) return undefined;
+    return decodeURIComponent(continueTo);
+  });
+  readonly authTab = computed(() => {
+    const tab = this.routeParams()?.['tab'];
+    return tab ?? 'sign-up';
+  })
   readonly rooms = select(Selectors.rooms);
   readonly form = new FormGroup({
     name: new FormControl<string>('', { validators: [Validators.required] }),
@@ -64,8 +75,14 @@ export class RoomsPageComponent implements OnInit {
   readonly isSignedIn = select(Selectors.isSignedIn);
   readonly openAuthDialog = computed(() => !this.isSignedIn());
 
-  ngOnInit(): void {
-    this.loadRoomFn();
+  constructor() {
+    effect(() => console.log(this.routeParams()));
+    effect(() => console.log(this.redirect()));
+    effect(() => console.log(this.authTab()));
+    effect(() => {
+      if (this.isSignedIn())
+        this.loadRoomFn();
+    }, { allowSignalWrites: true })
   }
 
   onSignOutButtonClicked() {
@@ -91,5 +108,12 @@ export class RoomsPageComponent implements OnInit {
   onNewRoomDialogHide() {
     this.form.reset();
     this.form.markAsPristine();
+  }
+
+  onUserSignedIn() {
+    const redirect = this.redirect();
+    if (redirect) {
+      this.router.navigateByUrl(decodeURIComponent(redirect));
+    }
   }
 }

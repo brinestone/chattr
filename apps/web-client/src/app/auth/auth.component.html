@@ -1,5 +1,5 @@
 <!-- <p-toast /> -->
-<p-tabView>
+<p-tabView [activeIndex]="activeIndex()">
     <p-tabPanel header="Sign up">
         <div class="w-full space-y-2">
             <form (ngSubmit)="onSignUpFormSubmit()" [formGroup]="signUpForm" class="py-3 pt-4 space-y-2">
@@ -30,9 +30,9 @@
                     }
                 </div>
                 <div id="pass-panel w-full">
-                    <label for="password">Password <span class="text-red-500">*</span></label>
+                    <label for="new_password">Password <span class="text-red-500">*</span></label>
                     <input class="p-inputtext-sm inline-block w-full" formControlName="password" type="password"
-                        pPassword autocomplete="new-password" id="password" />
+                        pPassword autocomplete="new-password" id="new_password" />
                     @if(signUpForm.controls.password.invalid && signUpForm.controls.password.dirty) {
                     @if(signUpForm.controls.password.hasError('required')) {
                     <span class="block text-red-500 text-xs">
@@ -55,9 +55,9 @@
       <i class="pi pi-info-circle"></i> error message
     </span> -->
                 <div>
-                    <label for="email">Email</label>
+                    <label for="auth-email">Email</label>
                     <input formControlName="email" class="inline-block w-full p-inputtext-sm"
-                        autocomplete="current-username" type="email" id="email" pInputText>
+                        autocomplete="current-username" type="email" id="auth-email" pInputText>
                     @if(form.controls.email.invalid && form.controls.email.dirty) {
                     @if(form.controls.email.hasError('required')) {
                     <span class="block text-red-500 text-xs">
@@ -67,9 +67,9 @@
                     }
                 </div>
                 <div id="pass-panel w-full">
-                    <label for="password">Password</label>
+                    <label for="auth-password">Password</label>
                     <input class="p-inputtext-sm inline-block w-full" formControlName="password" type="password"
-                        pPassword autocomplete="current-password" id="password" />
+                        pPassword autocomplete="current-password" id="auth-password" />
                     @if(form.controls.password.invalid && form.controls.password.dirty) {
                     @if(form.controls.password.hasError('required')) {
                     <span class="block text-red-500 text-xs">

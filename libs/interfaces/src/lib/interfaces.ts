@@ -66,6 +66,11 @@ export enum Signaling {
   LeaveSession = 'LEAVE_SESSION',
   SessionClosed = 'SESSION_CLOSED',
   ConnectTransport = 'CONNECT_TRANSPORT',
-  SessionStarted = 'SESSION_STARTED',
-  CreateConsumer = 'CREATE_CONSUMER'
+  SessionOpened = 'SESSION_OPENED',
+  CreateConsumer = 'CREATE_CONSUMER',
+  CreateProducer = 'CREATE_PRODUCER',
+  ProducerOpened = 'PRODUCER_OPENED',
+  ProducerClosed = 'PRODUCER_CLOSED',
+  CloseProducer = 'CLOSE_PRODUCER',
+  CloseConsumer = 'CLOSE_CONSUMER'
 }

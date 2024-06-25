@@ -1,18 +1,19 @@
 <div class="container mx-auto py-4 h-full">
   <div>
+    @if (isSignedIn()) {
     <p-menubar>
       <ng-template pTemplate="end">
-        @if (isSignedIn()) {
         <p-button (onClick)="onSignOutButtonClicked()" label="Sign out" [outlined]="true" icon="pi pi-lock-open"
           size="small" />
-        }
       </ng-template>
     </p-menubar>
+    }
   </div>
   <div class="flex flex-col justify-center items-center gap-4 h-full w-full">
     <h1 class="text-gray-700 text-2lg m-0">Your Rooms</h1>
 
     <div class="container mx-auto space-y-3">
+      @if(isSignedIn()) {
       <p-galleria [value]="rooms()" [circular]="true" [responsiveOptions]="[
     {
         breakpoint: '1024px',
@@ -40,7 +41,6 @@
           </div>
         </ng-template>
       </p-galleria>
-      @if(isSignedIn()) {
       <div class="w-full flex justify-center">
         <p-button (onClick)="openNewRoomDialog.set(true)" label="Add a Space" icon="pi pi-plus" />
       </div>
@@ -53,7 +53,9 @@
          '768px': '50vw',
         '640px': '98vw',
       }" [closable]="false" [modal]="true" [visible]="openAuthDialog()" [draggable]="false">
-  <chattr-auth />
+  <!-- @if(!isSignedIn()){ -->
+  <chattr-auth (signedIn)="onUserSignedIn()" [startingTab]="authTab()" />
+  <!-- } -->
 </p-dialog>
 
 <p-dialog [closable]="false" (onHide)="onNewRoomDialogHide()" [draggable]="false" [modal]="true"

@@ -20,9 +20,10 @@ import { SidebarModule } from 'primeng/sidebar';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { EMPTY, map, switchMap, take } from 'rxjs';
-import { ConnectToRoom, DevicesFound, FindDevices, SetAudioDevice, SetVideoDevice } from '../../actions';
+import { ConnectToRoom, DevicesFound, FindDevices, SetAudioDevice, SetVideoDevice, ToggleAudio, ToggleVideo } from '../../actions';
 import { RoomMemberComponent } from '../../components/room-member/room-member.component';
 import { Selectors } from '../../state/selectors';
+import { errorToMessage } from '../../util';
 
 @Component({
   selector: 'chattr-room-page',
@@ -49,11 +50,16 @@ export class RoomPageComponent implements OnInit {
   private readonly sessionConnectFn = dispatch(ConnectToRoom);
   private readonly loadDevicesFn = dispatch(FindDevices);
   private readonly setAudioDeviceFn = dispatch(SetAudioDevice);
+  private readonly videoToggleFn = dispatch(ToggleVideo);
+  private readonly audioToggleFn = dispatch(ToggleAudio);
   private readonly setVideoDeviceFn = dispatch(SetVideoDevice);
   private readonly activatedRoute = inject(ActivatedRoute);
+  private readonly messageService = inject(MessageService);
   private readonly actions$ = inject(Actions);
   private readonly preferredAudioDevice = select(Selectors.audioInDevice);
   private readonly preferredVideoDevice = select(Selectors.videoInDevice);
+  readonly videoDisabled = select(Selectors.isVideoDisabled);
+  readonly audioDisabled = select(Selectors.isAudioDisabled);
   readonly devicesConfigured = select(Selectors.devicesConfigured);
   showDevicesConfigSidebar = false;
   private readonly mediaDevices = toSignal(this.actions$.pipe(
@@ -80,7 +86,7 @@ export class RoomPageComponent implements OnInit {
   });
   readonly previewStream = toSignal(this.deviceConfigForm.valueChanges.pipe(
     switchMap(({ video, audio }) => {
-      let constraints: MediaStreamConstraints = {};
+      const constraints: MediaStreamConstraints = {};
       if (video)
         constraints.video = {
           deviceId: video,
@@ -128,5 +134,17 @@ export class RoomPageComponent implements OnInit {
     this.setAudioDeviceFn(audio ?? undefined);
     this.setVideoDeviceFn(video ?? undefined);
     this.previewStream()?.getTracks().forEach(track => track.stop());
+  }
+
+  onMemberSessionError(error: Error) {
+    this.messageService.add(errorToMessage(error));
+  }
+
+  onToggleAudioButtonClicked() {
+    this.audioToggleFn();
+  }
+
+  onToggleVideoButtonClicked() {
+    this.videoToggleFn();
   }
 }

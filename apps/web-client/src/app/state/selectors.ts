@@ -1,27 +1,37 @@
-import { Selector, createPropertySelectors } from "@ngxs/store";
-import { UserState, UserStateModel } from "./user.state";
-import { RoomState, RoomStateModel } from "./room.state";
 import { ConnectedRoom, Room, RoomMemberSession } from "@chattr/interfaces";
-import { DeviceState, DeviceStateModel } from "./devices.state";
+import { Selector, createPropertySelectors } from "@ngxs/store";
+import { DeviceConfig, DeviceState, DeviceStateModel } from "./devices.state";
+import { RoomState, RoomStateModel } from "./room.state";
+import { UserState, UserStateModel } from "./user.state";
 
 export class Selectors {
     private static userSlices = createPropertySelectors<UserStateModel>(UserState);
     private static roomSlices = createPropertySelectors<RoomStateModel>(RoomState);
     private static deviceSlices = createPropertySelectors<DeviceStateModel>(DeviceState);
 
-    @Selector([Selectors.deviceSlices.audio, Selectors.deviceSlices.video])
-    static configuredDevices(audio?: string, video?: string) {
-        return { video, audio };
-    }
-
     @Selector([Selectors.deviceSlices.video])
-    static videoInDevice(video?: string) {
-        return video;
+    static isVideoDisabled(video?: DeviceConfig) {
+        return video?.disabled ?? false;
     }
 
     @Selector([Selectors.deviceSlices.audio])
-    static audioInDevice(audio?: string) {
-        return audio;
+    static isAudioDisabled(audio?: DeviceConfig) {
+        return audio?.disabled ?? false;
+    }
+
+    @Selector([Selectors.deviceSlices.audio, Selectors.deviceSlices.video])
+    static configuredDevices(audio?: DeviceConfig, video?: DeviceConfig) {
+        return { video: video?.deviceId, audio: audio?.deviceId };
+    }
+
+    @Selector([Selectors.deviceSlices.video])
+    static videoInDevice(video?: DeviceConfig) {
+        return video?.deviceId;
+    }
+
+    @Selector([Selectors.deviceSlices.audio])
+    static audioInDevice(audio?: DeviceConfig) {
+        return audio?.deviceId;
     }
 
     @Selector([Selectors.deviceSlices.configured])
