@@ -1,6 +1,6 @@
-import { User } from '@chattr/interfaces';
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { createHash } from 'crypto';
 import { createWorker } from 'mediasoup';
 import {
   Consumer,
@@ -31,7 +31,6 @@ import {
   throwError
 } from 'rxjs';
 import { RoomEntity, RoomMemberEntity, RoomSessionEntity, UserEntity } from '../models';
-import { createHash, randomUUID } from 'crypto';
 
 type RouterWebRtcServerMap = Record<
   string,

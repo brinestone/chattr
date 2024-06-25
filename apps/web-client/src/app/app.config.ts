@@ -13,13 +13,14 @@ import { appRoutes } from './app.routes';
 import { jwtTokenInterceptor } from './interceptors/jwt-token.interceptor';
 import { RoomState } from './state/room.state';
 import { UserState } from './state/user.state';
+import { DeviceState } from './state/devices.state';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideRouter(appRoutes, withViewTransitions()),
     provideAnimations(),
     provideHttpClient(withInterceptors([jwtTokenInterceptor])),
-    provideStore([UserState, RoomState],
+    provideStore([UserState, RoomState, DeviceState],
       withNgxsLoggerPlugin({
         disabled: !isDevMode()
       }),

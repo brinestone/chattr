@@ -71,22 +71,7 @@ export class RoomService {
     );
   }
 
-  findMediaDevices() {
-    return from(navigator.mediaDevices.enumerateDevices()).pipe(
-      switchMap(identity),
-      filter(
-        (device) => device.kind == 'audioinput' || device.kind == 'videoinput'
-      ),
-      map(({ deviceId, label, kind }) => {
-        return {
-          id: deviceId,
-          name: label ?? 'Default Device',
-          type: kind == 'audioinput' ? 'audio' : 'video',
-        } as MediaDevice;
-      }),
-      toArray()
-    );
-  }
+  
 
   createRoom(name: string) {
     return this.httpClient.post(`${environment.backendOrigin}/rooms`, { name }).pipe(
@@ -143,66 +128,6 @@ export class RoomService {
   getRooms() {
     return this.httpClient.get<Room[]>(`${environment.backendOrigin}/rooms`).pipe(
       catchError(parseHttpClientError)
-    );
-  }
-
-  async getMediaStream(
-    device: string,
-    type: 'audio' | 'video',
-    width?: number,
-    height?: number
-  ) {
-    let constraints: MediaStreamConstraints;
-    if (type == 'audio')
-      constraints = {
-        audio: {
-          deviceId: device,
-        },
-      };
-    else
-      constraints = {
-        video: {
-          deviceId: device,
-          width,
-          height,
-        },
-      };
-    return navigator.mediaDevices.getUserMedia(constraints);
-  }
-
-  getPreviewStreamProvider$(
-    deviceProvider: () => Observable<[MediaDevice | null, MediaDevice | null]>
-  ) {
-    let currentStream: MediaStream | null;
-    return deviceProvider().pipe(
-      switchMap(([audio, video]) => {
-        if (currentStream) {
-          currentStream.getTracks().forEach((track) => track.stop());
-        }
-
-        const constraints: MediaStreamConstraints = {};
-
-        if (audio) {
-          constraints.audio = {
-            deviceId: audio.id,
-            echoCancellation: true,
-          };
-        }
-
-        if (video) {
-          constraints.video = {
-            deviceId: video.id,
-            width: 320,
-            height: 200,
-            facingMode: 'front',
-          };
-        }
-
-        if (!constraints.video && !constraints.audio) return of(null);
-
-        return navigator.mediaDevices.getUserMedia(constraints);
-      }),
-      tap((stream) => (currentStream = stream))
     );
   }
 }

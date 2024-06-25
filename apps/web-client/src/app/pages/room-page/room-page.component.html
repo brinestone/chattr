@@ -8,7 +8,8 @@
 </div>
 <div class="w-full py-2">
   <div class="container mx-auto flex justify-center gap-5">
-    <p-button tooltipPosition="top" pTooltip="Settings" icon="pi pi-cog" [outlined]="true" [rounded]="true" />
+    <p-button (onClick)="showDevicesConfigSidebar = true" [severity]="devicesConfigured() ? undefined : 'danger'"
+      tooltipPosition="top" pTooltip="Settings" icon="pi pi-cog" [outlined]="true" [rounded]="true" />
     <p-button tooltipPosition="top" pTooltip="Toggle Audio" icon="pi pi-microphone" [outlined]="true"
       [rounded]="true" />
     <p-button tooltipPosition="top" pTooltip="Toggle Video" icon="pi pi-video" [outlined]="true" [rounded]="true" />
@@ -17,3 +18,46 @@
     <p-button tooltipPosition="top" pTooltip="Disconnect" icon="pi pi-times" severity="danger" [rounded]="true" />
   </div>
 </div>
+
+<p-sidebar (onShow)="onDeviceConfigSidebarShown()" styleClass="w-[50rem]" [modal]="true"
+  [(visible)]="showDevicesConfigSidebar" (onHide)="onDeviceConfigSidebarHidden()" position="right">
+  <ng-template pTemplate="header">
+    <h2>Configure Devices</h2>
+  </ng-template>
+  <ng-template pTemplate="content">
+    @if(showDevicesConfigSidebar) {
+    <form [formGroup]="deviceConfigForm">
+      <section>
+        <div class="flex flex-col gap-3 items-center">
+          <div class="space-y-1">
+            <h3 class="text-center">Preview</h3>
+            <video width="320" height="240" class="w-[640px]" [srcObject]="previewStream()" autoplay></video>
+          </div>
+          @defer(when loadingDevices()) {
+          <div class="flex items-center gap-3">
+            <p-dropdown formControlName="video" appendTo="body" optionLabel="name" optionValue="id"
+              placeholder="Select Camera" [options]="videoDevices()">
+              <ng-template let-device pTemplate="selectedItem">
+                <div class="flex items-center gap-2">
+                  <i class="pi pi-video"></i>
+                  <span>{{ device.name }}</span>
+                </div>
+              </ng-template>
+            </p-dropdown>
+            <p-dropdown formControlName="audio" appendTo="body" optionLabel="name" optionValue="id"
+              placeholder="Select Microphone" [options]="audioDevices()">
+              <ng-template let-device pTemplate="selectedItem">
+                <div class="flex items-center gap-2">
+                  <i class="pi pi-microphone"></i>
+                  <span>{{ device.name }}</span>
+                </div>
+              </ng-template>
+            </p-dropdown>
+          </div>
+          }
+        </div>
+      </section>
+    </form>
+    }
+  </ng-template>
+</p-sidebar>

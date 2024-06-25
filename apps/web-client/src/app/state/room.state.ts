@@ -2,17 +2,13 @@ import { Injectable, inject } from '@angular/core';
 import { ConnectedRoom, ConnectionStatus, Room } from '@chattr/interfaces';
 import { Action, NgxsOnInit, State, StateContext, select } from '@ngxs/store';
 import { patch } from '@ngxs/store/operators';
-import { EMPTY, concatMap, forkJoin, from, map, of, switchMap, tap, throwError } from 'rxjs';
-import { CreateRoom, LoadRooms, SaveDeviceConfig, SetAudioDevice, ConnectToRoom, SetVideoDevice, ConnectedRoomChanged, JoinSession, SessionJoined, ClearConnectedRoom, LeaveSession, UpdateConnectionStatus, CreateServerSideConsumer, ServerSideConsumerCreated } from '../actions';
+import { EMPTY, concatMap, forkJoin, from, of, switchMap, tap, throwError } from 'rxjs';
+import { ClearConnectedRoom, ConnectToRoom, ConnectedRoomChanged, CreateRoom, CreateServerSideConsumer, DevicesFound, FindDevices, JoinSession, LeaveSession, LoadRooms, ServerSideConsumerCreated, SessionJoined, UpdateConnectionStatus } from '../actions';
+import { DeviceService } from '../services/device.service';
 import { RoomService } from '../services/room.service';
 import { Selectors } from './selectors';
 
 export type RoomStateModel = {
-  deviceConfig: {
-    audio?: string;
-    video?: string;
-    unconfigured: boolean;
-  };
   rooms: Room[];
   connectedRoom?: ConnectedRoom;
 };
@@ -21,18 +17,23 @@ export type RoomStateModel = {
 @State<RoomStateModel>({
   name: 'room',
   defaults: {
-    rooms: [],
-    deviceConfig: {
-      unconfigured: true,
-    },
+    rooms: []
   },
 })
 export class RoomState implements NgxsOnInit {
   private readonly accessToken = select(Selectors.accessToken);
   private readonly roomService = inject(RoomService);
+  private readonly deviceService = inject(DeviceService);
 
   ngxsOnInit(ctx: StateContext<RoomStateModel>): void {
     ctx.dispatch(ClearConnectedRoom);
+  }
+
+  @Action(FindDevices)
+  findDevices(ctx: StateContext<RoomStateModel>) {
+    return this.deviceService.findMediaDevices().pipe(
+      tap(devices => ctx.dispatch(new DevicesFound(devices)))
+    );
   }
 
   @Action(CreateServerSideConsumer)
@@ -76,8 +77,8 @@ export class RoomState implements NgxsOnInit {
     const existingConnectedRoom = ctx.getState().connectedRoom;
     if (existingConnectedRoom) {
       this.roomService.closeExistingConnection();
+      this.roomService.establishConnection(this.accessToken());
     }
-    this.roomService.establishConnection(this.accessToken())
   }
 
   @Action(ClearConnectedRoom)
@@ -125,29 +126,5 @@ export class RoomState implements NgxsOnInit {
         rooms
       })))
     )
-  }
-
-  @Action(SaveDeviceConfig)
-  onSaveDeviceConfig(ctx: StateContext<RoomStateModel>) {
-    const currentState = ctx.getState();
-    ctx.patchState({
-      deviceConfig: { ...currentState.deviceConfig, unconfigured: false }
-    });
-  }
-
-  @Action(SetAudioDevice)
-  onSetAudioDevice(ctx: StateContext<RoomStateModel>, { id }: SetAudioDevice) {
-    const currentState = ctx.getState();
-    ctx.patchState({
-      deviceConfig: { ...currentState.deviceConfig, audio: id },
-    });
-  }
-
-  @Action(SetVideoDevice)
-  onSetVideoDevice(ctx: StateContext<RoomStateModel>, { id }: SetVideoDevice) {
-    const currentState = ctx.getState();
-    ctx.patchState({
-      deviceConfig: { ...currentState.deviceConfig, video: id },
-    });
   }
 }

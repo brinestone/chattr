@@ -3,10 +3,10 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
-    "start:web-client": "yarn nx run web-client:serve:development",
+    "start:web-client": "yarn nx run web-client:serve:development --ssl",
     "start:server": "yarn nx run server:serve:development --verbose",
     "dev": "yarn nx run-many -t serve",
-    "format": "yarn nx affected:lint --fix"
+    "format": "yarn nx affected:lint --fix --base=master"
   },
   "private": true,
   "dependencies": {

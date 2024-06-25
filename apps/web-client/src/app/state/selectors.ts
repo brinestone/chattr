@@ -2,27 +2,31 @@ import { Selector, createPropertySelectors } from "@ngxs/store";
 import { UserState, UserStateModel } from "./user.state";
 import { RoomState, RoomStateModel } from "./room.state";
 import { ConnectedRoom, Room, RoomMemberSession } from "@chattr/interfaces";
+import { DeviceState, DeviceStateModel } from "./devices.state";
 
 export class Selectors {
     private static userSlices = createPropertySelectors<UserStateModel>(UserState);
     private static roomSlices = createPropertySelectors<RoomStateModel>(RoomState);
+    private static deviceSlices = createPropertySelectors<DeviceStateModel>(DeviceState);
 
-    @Selector([Selectors.roomSlices.deviceConfig])
-    static videoInDevice({ video }: {
-        audio?: string | undefined;
-        video?: string | undefined;
-        unconfigured: boolean;
-    }) {
+    @Selector([Selectors.deviceSlices.audio, Selectors.deviceSlices.video])
+    static configuredDevices(audio?: string, video?: string) {
+        return { video, audio };
+    }
+
+    @Selector([Selectors.deviceSlices.video])
+    static videoInDevice(video?: string) {
         return video;
     }
 
-    @Selector([Selectors.roomSlices.deviceConfig])
-    static audioInDevice({ audio }: {
-        audio?: string | undefined;
-        video?: string | undefined;
-        unconfigured: boolean;
-    }) {
+    @Selector([Selectors.deviceSlices.audio])
+    static audioInDevice(audio?: string) {
         return audio;
+    }
+
+    @Selector([Selectors.deviceSlices.configured])
+    static devicesConfigured(configured: boolean) {
+        return configured;
     }
 
     @Selector([Selectors.roomSlices.connectedRoom])
@@ -43,14 +47,7 @@ export class Selectors {
         return token;
     }
 
-    @Selector([Selectors.roomSlices.deviceConfig])
-    static devicesConfigured({ unconfigured }: {
-        audio?: string | undefined;
-        video?: string | undefined;
-        unconfigured: boolean;
-    }) {
-        return !unconfigured;
-    }
+
 
     @Selector([Selectors.roomSlices.rooms])
     static rooms(rooms: Room[]) {

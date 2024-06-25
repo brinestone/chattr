@@ -1,6 +1,16 @@
 import { ConnectionStatus, ILoginRequest, ISignupRequest } from "@chattr/interfaces";
 import { MediaKind, RtpCapabilities, RtpParameters } from "mediasoup-client/lib/RtpParameters";
 import { DtlsParameters } from "mediasoup-client/lib/Transport";
+import { MediaDevice } from "../services/room.service";
+
+export class FindDevices {
+  static type = '[Device] Find Devices';
+}
+
+export class DevicesFound {
+  static type = '[Device] Devices Found';
+  constructor(readonly devices: MediaDevice[]) { }
+}
 
 export class SetAudioDevice {
   static type = '[Device] Set Audio device';
@@ -119,5 +129,5 @@ export class ToggleConsumerStream {
 
 export class NewSessionProducer {
   static type = `[Room] Session Updated - New Session Producer`;
-  constructor(readonly sessionId: string, readonly producerId: string) {}
+  constructor(readonly sessionId: string, readonly producerId: string) { }
 }

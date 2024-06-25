@@ -132,7 +132,7 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
     //   track: audioTrack
     // });
 
-    
+
   }
 
   private setupTransports(transportParams: any) {
