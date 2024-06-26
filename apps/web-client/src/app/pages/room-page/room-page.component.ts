@@ -12,10 +12,13 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { Actions, dispatch, ofActionDispatched, select } from '@ngxs/store';
 import { MessageService } from 'primeng/api';
+import { AutoCompleteModule } from 'primeng/autocomplete';
 import { BadgeModule } from 'primeng/badge';
 import { ButtonModule } from 'primeng/button';
+import { DialogModule } from 'primeng/dialog';
 import { DividerModule } from 'primeng/divider';
 import { DropdownModule } from 'primeng/dropdown';
+import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { SidebarModule } from 'primeng/sidebar';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -24,7 +27,6 @@ import { ConnectToRoom, DevicesFound, FindDevices, SetAudioDevice, SetVideoDevic
 import { RoomMemberComponent } from '../../components/room-member/room-member.component';
 import { Selectors } from '../../state/selectors';
 import { errorToMessage } from '../../util';
-
 @Component({
   selector: 'chattr-room-page',
   standalone: true,
@@ -35,12 +37,15 @@ import { errorToMessage } from '../../util';
     NgStyle,
     SlicePipe,
     DropdownModule,
+    AutoCompleteModule,
+    ProgressSpinnerModule,
     NgClass,
     DividerModule,
     RoomMemberComponent,
     SidebarModule,
     BadgeModule,
     SkeletonModule,
+    DialogModule,
     ReactiveFormsModule
   ],
   templateUrl: './room-page.component.html',
@@ -58,6 +63,8 @@ export class RoomPageComponent implements OnInit {
   private readonly actions$ = inject(Actions);
   private readonly preferredAudioDevice = select(Selectors.audioInDevice);
   private readonly preferredVideoDevice = select(Selectors.videoInDevice);
+  readonly gettingShareLink = signal(false);
+  readonly shareLink = signal('https://localhost:43200/rooms/667b467cf7d7a9d6807ab80c')
   readonly videoDisabled = select(Selectors.isVideoDisabled);
   readonly audioDisabled = select(Selectors.isAudioDisabled);
   readonly devicesConfigured = select(Selectors.devicesConfigured);
@@ -146,5 +153,16 @@ export class RoomPageComponent implements OnInit {
 
   onToggleVideoButtonClicked() {
     this.videoToggleFn();
+  }
+
+  onCopyShareLinkButtonClicked() {
+    console.log('test');
+    navigator.clipboard.writeText(this.shareLink()).then(() => {
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Info',
+        detail: 'Invite link was copied to your clipboard'
+      })
+    });
   }
 }

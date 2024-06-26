@@ -47,7 +47,7 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
     return session.id == producibleSession?.id;
   });
   @Output()
-  readonly error = new EventEmitter<Error>();
+  readonly errored = new EventEmitter<Error>();
   readonly avatar = computed(() => {
     const { displayName } = this.session();
     const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').substring(1);
@@ -129,7 +129,8 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
       filter(({ sessionId, producerId: _producerId }) => _producerId == producerId && sessionId == this.session().id),
       take(1)
     ).subscribe(async ({ id, kind, rtpParameters }) => {
-      const consumer = await this.transport!.consume({ id, kind, producerId, rtpParameters });
+      if (!this.transport) return;
+      const consumer = await this.transport.consume({ id, kind, producerId, rtpParameters });
       this.consumers.set(consumer.id, consumer);
 
       this.actions$.pipe(
@@ -224,6 +225,14 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
       this.sessionStream.update((previousStream) => {
         if (previousStream) {
           previousStream.getTracks().forEach(track => track.stop());
+        }
+
+        if (currentStream && this.canPublish()) {
+          const audioTrack = currentStream.getAudioTracks()[0];
+          if (audioTrack) {
+            console.log('Removing audio track from publishing session');
+            currentStream.removeTrack(audioTrack);
+          }
         }
         return currentStream;
       });

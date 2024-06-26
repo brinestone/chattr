@@ -1,11 +1,11 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { ILoginRequest, ILoginResponse, ISignupRequest } from '@chattr/interfaces';
+import { ILoginRequest, ILoginResponse, INotification, ISignupRequest } from '@chattr/interfaces';
 import { jwtDecode } from 'jwt-decode';
-import { catchError } from 'rxjs';
+import { Observable, catchError } from 'rxjs';
 import { environment } from '../../environments/environment.development';
 import { parseHttpClientError } from '../util';
-
+import {} from 'event-source';
 @Injectable({
   providedIn: 'root'
 })
@@ -20,6 +20,36 @@ export class UserService {
     const now = Date.now();
 
     return (exp * 1000) > now;
+  }
+
+  getLiveNotifications(authToken: string) {
+    // const { sub } = jwtDecode(authToken);
+    return new Observable<INotification>(subscriber => {
+      const eventSource = new EventSourcePollyfill(`${environment.backendOrigin}/notifications/live`, {
+        authorizationHeader: authToken
+      });
+
+      subscriber.add(() => eventSource.close());
+
+      eventSource.onmessage = ({ data }: MessageEvent) => {
+        subscriber.next(JSON.parse(data));
+      }
+      eventSource.onerror = (e: Event) => {
+        console.error(e);
+        subscriber.error(e);
+      }
+    });
+  }
+
+  getNotifications(offset?: string) {
+    return this.http.get<INotification[]>(`${environment.backendOrigin}/notifications`, {
+      params: {
+        seenOnly: false,
+        offset: offset ?? ''
+      }
+    }).pipe(
+      catchError(parseHttpClientError)
+    )
   }
 
   signUp(request: ISignupRequest) {

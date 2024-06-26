@@ -1,6 +1,5 @@
 export interface Entity {
   id: string;
-  _v: number;
   updatedAt: Date;
   createdAt: Date;
 }
@@ -9,6 +8,13 @@ export interface User extends Entity {
   email: string;
   avatar?: string;
   name: string;
+}
+
+export interface INotification extends Entity {
+  from: string;
+  image?: string;
+  title: string;
+  body: string;
 }
 
 export type RoomMemberRole = 'guest' | 'owner' | 'moderator';

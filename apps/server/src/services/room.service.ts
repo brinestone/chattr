@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash } from 'crypto';
 import { createWorker } from 'mediasoup';
@@ -69,7 +69,8 @@ function computeTransportId(userId: string, sessionId: string) {
 export class RoomService {
   private readonly logger = new Logger(RoomService.name);
   private readonly workers = Array<Worker>(Math.min(5, cpus().length));
-  private readonly routerWebRtcServerMap: RouterWebRtcServerMap = {};
+  private readonly webRtcServers = Array<WebRtcServer>(this.workers.length);
+  private readonly routers: Record<string, Router> = {};
   private readonly webRtcTransports: Record<string, WebRtcTransport> = {};
   private readonly producers: Record<string, Producer> = {};
   private readonly consumers: Record<string, Consumer> = {};
@@ -103,12 +104,12 @@ export class RoomService {
   async closeSession(id: string) {
     this.logger.verbose(`Closing session: ${id}`);
     const sessionDoc = await this.sessionModel.findById(id);
+    const memberDoc = await this.memberModel.findById(sessionDoc.member);
     const transportId = computeTransportId(sessionDoc.userId, id);
-    const routerServerEntry = this.routerWebRtcServerMap[id];
-    if (routerServerEntry) {
-      routerServerEntry.router.close();
-      routerServerEntry.server.close();
-      delete this.routerWebRtcServerMap[id];
+    const router = this.routers[memberDoc.roomId];
+    if (router) {
+      router.close();
+      delete this.routers[memberDoc.roomId];
       delete this.webRtcTransports[transportId];
     }
     await sessionDoc.updateOne({
@@ -125,6 +126,13 @@ export class RoomService {
     const transportId = computeTransportId(userId, sessionId);
     const transport = this.webRtcTransports[transportId];
     if (!transport) throw new NotFoundException('Transport not found');
+
+    const session = await this.sessionModel.findById(sessionId);
+    const member = await this.memberModel.findById(session.member);
+    const roomId = member.roomId;
+    const router = this.routers[roomId];
+
+    if (!router.canConsume({ producerId, rtpCapabilities })) throw new UnprocessableEntityException('The producer media cannot be consumed');
 
     const consumer = await transport.consume({ producerId, rtpCapabilities, paused: true });
     this.consumers[consumer.id] = consumer;
@@ -224,26 +232,39 @@ export class RoomService {
               rtcMinPort: 40000,
             }),
             of(index),
-          ])
+          ]).pipe(
+            concatMap(([worker, index]) => forkJoin([
+              of(worker),
+              worker.createWebRtcServer({
+                listenInfos: [
+                  {
+                    ip: '0.0.0.0',
+                    announcedAddress: ip,
+                    protocol: 'udp',
+                  },
+                ],
+              }),
+              of(index)
+            ]))
+          )
         )
       )
       .subscribe({
-        next: ([worker, index]) => {
+        next: ([worker, server, index]) => {
           this.logger.verbose(`worker::${worker.pid}::create`);
+          this.logger.verbose(`WebRtc Server::${server.id}::create`);
+          worker.appData.index = index;
           this.workers[index] = worker;
+          this.webRtcServers[index] = server;
 
-          worker.observer.on('newwebrtcserver', (server) => {
+          server.observer.on('close', () => {
             this.logger.verbose(
-              `New WebRTC server::${server.id} on worker::${worker.pid}`
+              `WebRTC server::${server.id} closed on worker::${worker.pid}`
             );
-            server.observer.on('close', () => {
-              this.logger.verbose(
-                `WebRTC server::${server.id} closed on worker::${worker.pid}`
-              );
-            });
           });
 
           worker.observer.on('newrouter', (router) => {
+            router.appData.serverIndex = index;
             this.logger.verbose(
               `New router::${router.id} on worker::${worker.pid}`
             );
@@ -356,8 +377,8 @@ export class RoomService {
     const isSessionOwner = this.isSessionOwner(sessionId, userId);
 
     const transportId = computeTransportId(userId, sessionId);
-    const { iceParameters, iceCandidates, dtlsParameters, id } = await this.assertWebRtcTransport(sessionId, transportId);
-    const rtpCapabilities = this.routerWebRtcServerMap[sessionId].router.rtpCapabilities;
+    const { iceParameters, iceCandidates, dtlsParameters, id } = await this.assertWebRtcTransport(roomId, transportId);
+    const rtpCapabilities = this.routers[roomId].rtpCapabilities;
 
     this.logger.verbose(`User: ${userId} has been added to ${isSessionOwner ? 'their own' : 'the'} session: ${sessionId} in room: ${roomId} successfully. Awaiting final connection to their WebRTC transport`);
     return { isSessionOwner, params: { rtpCapabilities, transportParams: { iceParameters, iceCandidates, dtlsParameters, id } } };
@@ -451,16 +472,12 @@ export class RoomService {
     return session;
   }
 
-  private async assertWebRtcTransport(routerMapId: string, id: string) {
+  private async assertWebRtcTransport(routerID: string, id: string) {
     let transport = this.webRtcTransports[id];
 
     if (!transport) {
-      let entry = this.routerWebRtcServerMap[routerMapId];
-      if (!entry) {
-        await this.assertRouter(routerMapId);
-        entry = this.routerWebRtcServerMap[routerMapId];
-      }
-      const { router, server } = entry;
+      const router = this.routers[routerID] ?? (await this.assertRouter(routerID));
+      const server = this.webRtcServers[router.appData.serverIndex as number];
       transport = await router.createWebRtcTransport({
         webRtcServer: server,
         enableUdp: true,
@@ -472,22 +489,15 @@ export class RoomService {
   }
 
   private async assertRouter(id: string) {
-    let entry = this.routerWebRtcServerMap[id];
-    if (!entry) {
+    let router = this.routers[id];
+    if (!router) {
       const worker = this.nextWorker;
-      const router = await worker.createRouter({
+      const _router = await worker.createRouter({
         mediaCodecs,
       });
-      const server = await worker.createWebRtcServer({
-        listenInfos: [
-          {
-            ip,
-            protocol: 'udp',
-          },
-        ],
-      });
-      entry = this.routerWebRtcServerMap[id] = { router, server };
+      _router.appData.serverIndex
+      router = this.routers[id] = _router;
     }
-    return entry.router;
+    return router;
   }
 }

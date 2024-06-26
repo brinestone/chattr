@@ -1,8 +1,8 @@
-import { ILoginRequest, ISignupRequest } from '@chattr/interfaces';
+import { ISignupRequest } from '@chattr/interfaces';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { compare, genSalt, hash } from 'bcrypt';
-import { Model } from 'mongoose';
+import { genSalt, hash } from 'bcrypt';
+import { Model, UpdateQuery } from 'mongoose';
 import { UserEntity } from '../models';
 
 @Injectable()
@@ -11,6 +11,14 @@ export class UserService {
     @InjectModel(UserEntity.name) private userModel: Model<UserEntity>,
     // @InjectModel(UserSession.name) private sessionModel: Model<UserSession>
   ) {
+  }
+
+  async findByIdInternalAsync(id: string) {
+    return this.userModel.findById(id).exec();
+  }
+
+  async updateUserInternalAsync(id: string, update: UpdateQuery<UserEntity>) {
+    return this.userModel.findByIdAndUpdate(id, update);
   }
 
   async createUserAsync({ email, name, password, avatar }: ISignupRequest) {

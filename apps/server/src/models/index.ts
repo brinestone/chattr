@@ -1,5 +1,6 @@
 import {
   Entity,
+  INotification,
   Room,
   RoomMember,
   RoomMemberRole,
@@ -13,12 +14,13 @@ import { HydratedDocument, Schema as MongooseSchema } from 'mongoose';
 export type UserDocument = HydratedDocument<User>;
 export type RoomMemberDocument = HydratedDocument<RoomMember>;
 export type RoomDocument = HydratedDocument<Room>;
+export type NotificationDocument = HydratedDocument<Notification>;
 
 abstract class BaseEntity implements Entity {
   @Exclude()
   _id!: MongooseSchema.Types.ObjectId;
   @Exclude()
-  _v!: number;
+  __v!: number;
   updatedAt!: Date;
   createdAt!: Date;
   @Expose()
@@ -38,6 +40,9 @@ export class UserEntity extends BaseEntity implements User {
   passwordHash: string;
   @Prop({ required: true })
   name: string;
+  @Prop()
+  @Exclude()
+  notificationResumeToken?: string;
 
   constructor(data?: Partial<User>) {
     super();
@@ -199,3 +204,39 @@ export type Principal = {
   email: string;
   userId: string;
 }
+
+@Schema({ timestamps: true })
+export class Notification extends BaseEntity implements INotification {
+  @Prop({
+    type: MongooseSchema.Types.ObjectId, ref: UserEntity.name, required: true
+  })
+  @Transform(({ value }) => (value as MongooseSchema.Types.ObjectId).toString(), { toPlainOnly: true })
+  from: string;
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: UserEntity.name, required: true })
+  @Exclude()
+  to: string;
+
+  @Prop({ default: false })
+  @Exclude()
+  seen: boolean;
+
+  @Prop()
+  image?: string;
+
+  @Prop({ required: true })
+  title: string;
+
+  @Prop({ required: true })
+  body: string;
+
+  constructor(data?: Partial<INotification>) {
+    super();
+    if (data) Object.assign(this, data);
+  }
+}
+
+export const NotificationSchema = SchemaFactory.createForClass(Notification).pre('save', function (next) {
+  this.increment();
+  return next();
+});

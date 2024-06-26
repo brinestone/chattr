@@ -3,11 +3,14 @@
   'grid-rows-3': sessions().length > 6 && sessions().length < 10
 }" class="p-3 grid gap-2 grid-flow-col grid-cols-[repeat(auto-fit,minmax(300px,1fr))]">
   @for(session of sessions()|slice:0:10; track session.id) {
-  <chattr-room-member (error)="onMemberSessionError($event)" class="h-full w-full" [session]="session" />
+  <chattr-room-member (errored)="onMemberSessionError($event)" class="h-full w-full" [session]="session" />
   }
 </div>
 <div class="w-full py-2">
   <div class="container mx-auto flex justify-center gap-5">
+    <p-button pTooltip="Share" tooltipPosition="top" [outlined]="true" size="small" icon="pi pi-share-alt"
+      [rounded]="true" />
+    <p-divider layout="vertical" />
     <p-button (onClick)="showDevicesConfigSidebar = true" [severity]="devicesConfigured() ? undefined : 'danger'"
       tooltipPosition="top" pTooltip="Settings" icon="pi pi-cog" [outlined]="true" [rounded]="true" />
     <p-button (onClick)="onToggleAudioButtonClicked()" tooltipPosition="top" pTooltip="Toggle Audio"
@@ -62,3 +65,21 @@
     }
   </ng-template>
 </p-sidebar>
+<p-dialog [visible]="true" [modal]="true" [draggable]="false" [resizable]="false" header="Invite others">
+  <p>Copy the link below to invite others to join your room for more fun</p>
+  <h3>Invite using a link</h3>
+  @defer(when !gettingShareLink()) {
+  <div class="flex items-center gap-2">
+    <code class="text-ellipsis line-clamp-1 text-sm">{{ shareLink() }}</code>
+    <i (click)="onCopyShareLinkButtonClicked()" class="pi pi-copy cursor-pointer"></i>
+  </div>
+  }@placeholder (minimum 10s) {
+  <p-progressSpinner styleClass="w-[2rem] h-[2rem]" strokeWidth="3" animationDuration=".5s" />
+  }
+  <p-divider />
+  <h3>Invite using email</h3>
+  <p-autoComplete placeholder="User email" appendTo="body" styleClass="w-full" inputStyleClass="w-full"
+    panelStyleClass="w-full">
+    
+  </p-autoComplete>
+</p-dialog>

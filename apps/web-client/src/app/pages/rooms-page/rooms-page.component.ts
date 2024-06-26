@@ -76,9 +76,6 @@ export class RoomsPageComponent {
   readonly openAuthDialog = computed(() => !this.isSignedIn());
 
   constructor() {
-    effect(() => console.log(this.routeParams()));
-    effect(() => console.log(this.redirect()));
-    effect(() => console.log(this.authTab()));
     effect(() => {
       if (this.isSignedIn())
         this.loadRoomFn();
