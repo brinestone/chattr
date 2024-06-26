@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Room, RoomMemberSession, Signaling } from '@chattr/interfaces';
+import { ICreateRoomInviteRequest, IRoom, IRoomSession, Signaling } from '@chattr/interfaces';
 import { Store } from '@ngxs/store';
 import {
   DtlsParameters,
@@ -36,6 +36,17 @@ export class RoomService {
   private socket?: Socket;
   private socketInit = false;
 
+  createInviteLink(redirect: string, roomId: string, key: string) {
+    const request: ICreateRoomInviteRequest = {
+      redirect,
+      roomId,
+      key
+    };
+    return this.httpClient.post<{ url: string }>(`${environment.backendOrigin}/rooms/invite`, request).pipe(
+      catchError(parseHttpClientError)
+    )
+  }
+
   closeConsumer(consumerId: string) {
     this.assertSocket();
     this.socket!.emit(Signaling.CloseConsumer, { consumerId });
@@ -67,25 +78,25 @@ export class RoomService {
   }
 
   findRoomSession(sessionId: string) {
-    return this.httpClient.get<RoomMemberSession>(`${environment.backendOrigin}/rooms/sessions/${sessionId}`).pipe(
+    return this.httpClient.get<IRoomSession>(`${environment.backendOrigin}/rooms/sessions/${sessionId}`).pipe(
       catchError(parseHttpClientError)
     );
   }
 
   assertRoomSession(roomId: string) {
-    return this.httpClient.get<RoomMemberSession>(`${environment.backendOrigin}/rooms/${roomId}/session`).pipe(
+    return this.httpClient.get<IRoomSession>(`${environment.backendOrigin}/rooms/${roomId}/session`).pipe(
       catchError(parseHttpClientError)
     );
   }
 
   getConnectableSessions(roomId: string) {
-    return this.httpClient.get<RoomMemberSession[]>(`${environment.backendOrigin}/rooms/${roomId}/connectable-sessions`).pipe(
+    return this.httpClient.get<IRoomSession[]>(`${environment.backendOrigin}/rooms/${roomId}/connectable-sessions`).pipe(
       catchError(parseHttpClientError)
     );
   }
 
   getRoomInfo(roomId: string) {
-    return this.httpClient.get<Room>(`${environment.backendOrigin}/rooms/${roomId}`).pipe(
+    return this.httpClient.get<IRoom>(`${environment.backendOrigin}/rooms/${roomId}`).pipe(
       catchError(parseHttpClientError)
     );
   }
@@ -164,7 +175,7 @@ export class RoomService {
   }
 
   getRooms() {
-    return this.httpClient.get<Room[]>(`${environment.backendOrigin}/rooms`).pipe(
+    return this.httpClient.get<IRoom[]>(`${environment.backendOrigin}/rooms`).pipe(
       catchError(parseHttpClientError)
     );
   }

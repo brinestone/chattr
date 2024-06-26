@@ -1,13 +1,18 @@
-import { ConnectedRoom, Room, RoomMemberSession } from "@chattr/interfaces";
+import { IRoom, IRoomSession } from "@chattr/interfaces";
 import { Selector, createPropertySelectors } from "@ngxs/store";
 import { DeviceConfig, DeviceState, DeviceStateModel } from "./devices.state";
-import { RoomState, RoomStateModel } from "./room.state";
+import { ConnectedRoom, RoomState, RoomStateModel } from "./room.state";
 import { UserState, UserStateModel } from "./user.state";
 
 export class Selectors {
     private static userSlices = createPropertySelectors<UserStateModel>(UserState);
     private static roomSlices = createPropertySelectors<RoomStateModel>(RoomState);
     private static deviceSlices = createPropertySelectors<DeviceStateModel>(DeviceState);
+
+    @Selector([Selectors.roomSlices.connectedRoom])
+    static inviteLink(connectedRoom?: ConnectedRoom) {
+        return connectedRoom?.inviteLink;
+    }
 
     @Selector([Selectors.deviceSlices.video])
     static isVideoDisabled(video?: DeviceConfig) {
@@ -46,7 +51,7 @@ export class Selectors {
 
     @Selector([Selectors.roomSlices.connectedRoom])
     static allSessions(room?: ConnectedRoom) {
-        const ans = Array<RoomMemberSession>();
+        const ans = Array<IRoomSession>();
         if (room?.session) ans.push(room.session);
         ans.push(...(room?.otherSessions ?? []));
         return ans;
@@ -60,7 +65,7 @@ export class Selectors {
 
 
     @Selector([Selectors.roomSlices.rooms])
-    static rooms(rooms: Room[]) {
+    static rooms(rooms: IRoom[]) {
         return rooms;
     }
 

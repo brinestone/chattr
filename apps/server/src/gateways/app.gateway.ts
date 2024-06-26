@@ -1,5 +1,5 @@
 import { Signaling } from '@chattr/interfaces';
-import { Logger, OnApplicationBootstrap, UseFilters, UseGuards } from '@nestjs/common';
+import { Logger, OnApplicationBootstrap, UnprocessableEntityException, UseFilters, UseGuards } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -12,16 +12,24 @@ import {
 } from '@nestjs/websockets';
 import { DtlsParameters, MediaKind, RtpCapabilities, RtpParameters } from 'mediasoup/node/lib/types';
 import { Server, Socket } from 'socket.io';
-import { Ctx } from '../decorators/room.decorator';
+import { Ctx } from '../decorators/extract-from-context.decorator';
 import { WsExceptionFilter } from '../filters/ws-exception.filter';
 import { WsGuard } from '../guards/ws.guard';
 import { Principal } from '../models';
 import { RoomService } from '../services/room.service';
+import { fromEvent } from 'rxjs';
+import { Events } from '../events';
+import { RoleGuard } from '../guards/role.guard';
+import { Roles } from '../decorators/room-role';
+
+function getElevatedChannel(roomId: string) {
+  return `elevated::${roomId}`;
+}
 
 @WebSocketGateway(undefined, { cors: true })
 @UseFilters(new WsExceptionFilter())
 @UseGuards(WsGuard)
-export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnApplicationBootstrap {
   private readonly logger = new Logger(AppGateway.name);
   @WebSocketServer() private server: Server;
   constructor(private roomService: RoomService) { }
@@ -40,6 +48,32 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.leave(roomId);
     }
     this.logger.log(`${client.id} has disconnected.`);
+  }
+
+  onApplicationBootstrap() {
+    fromEvent(this.roomService.observer, Events.AdmissionPending).subscribe(({ memberId, userId, displayName, avatar, roomId, clientIp }: { memberId: string, clientIp: string, userId: string, displayName: string, avatar?: string, roomId: string }) => {
+      const elevatedChannel = getElevatedChannel(roomId);
+      this.server.to(elevatedChannel).emit(Signaling.AdmissionPending, { userId, displayName, avatar, roomId, memberId, clientIp });
+    })
+  }
+
+  @SubscribeMessage(Signaling.ApproveAdmission)
+  @UseGuards(RoleGuard)
+  @Roles('moderator')
+  async handleAdmissionApproval(
+    @ConnectedSocket() socket: Socket,
+    @Ctx('user') { userId }: Principal,
+    @MessageBody() { userId: admittedUserId, displayName, avatar, roomId, clientIp, memberId, status }: { status: boolean, memberId: string, clientIp: string, userId: string, displayName: string, avatar?: string, roomId: string }
+  ) {
+    try {
+      if (status) {
+        await this.roomService.admitMember(admittedUserId, memberId, displayName, roomId, clientIp, avatar);
+        socket.to(getElevatedChannel(roomId)).emit(Signaling.AdmissionApproved, { approvedBy: userId });
+      }
+    } catch (err) {
+      if (err instanceof UnprocessableEntityException) { }
+      else throw new WsException(err);
+    }
   }
 
   @SubscribeMessage(Signaling.CloseConsumer)
@@ -94,7 +128,9 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() { sessionId, roomId }: { roomId: string, sessionId: string }
   ) {
     try {
-      const { params, isSessionOwner } = await this.roomService.joinSession(sessionId, roomId, principal.userId);
+      const { params, isSessionOwner, hasElevatedPrivileges } = await this.roomService.joinSession(sessionId, roomId, principal.userId);
+      if (hasElevatedPrivileges)
+        socket.join(getElevatedChannel(roomId));
       socket.join(roomId);
       socket.data['roomId'] = roomId;
       if (!isSessionOwner)

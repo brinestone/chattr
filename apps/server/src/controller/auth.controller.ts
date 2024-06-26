@@ -3,7 +3,7 @@ import { Body, Controller, Post, Request, UseGuards, ValidationPipe } from "@nes
 import { Request as ExpressRequest } from 'express';
 import { LocalAuthGuard } from "../guards/local.guard";
 import { AuthService } from "../services/auth.service";
-import { UserEntity } from "../models";
+import { User } from "../models";
 
 @Controller('auth')
 export class AuthController {
@@ -17,6 +17,6 @@ export class AuthController {
     @Post('login')
     @UseGuards(LocalAuthGuard)
     async onLogin(@Request() req: ExpressRequest) {
-        return this.authService.loginUser(req.user as unknown as UserEntity);
+        return this.authService.loginUser(req.user as unknown as User);
     }
 }

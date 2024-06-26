@@ -5,7 +5,7 @@ import { jwtDecode } from 'jwt-decode';
 import { Observable, catchError } from 'rxjs';
 import { environment } from '../../environments/environment.development';
 import { parseHttpClientError } from '../util';
-import {} from 'event-source';
+// import {} from 'event-source';
 @Injectable({
   providedIn: 'root'
 })
@@ -25,8 +25,8 @@ export class UserService {
   getLiveNotifications(authToken: string) {
     // const { sub } = jwtDecode(authToken);
     return new Observable<INotification>(subscriber => {
-      const eventSource = new EventSourcePollyfill(`${environment.backendOrigin}/notifications/live`, {
-        authorizationHeader: authToken
+      const eventSource = new EventSource(`${environment.backendOrigin}/updates/live`, {
+
       });
 
       subscriber.add(() => eventSource.close());
@@ -42,9 +42,9 @@ export class UserService {
   }
 
   getNotifications(offset?: string) {
-    return this.http.get<INotification[]>(`${environment.backendOrigin}/notifications`, {
+    return this.http.get<INotification[]>(`${environment.backendOrigin}/updates`, {
       params: {
-        seenOnly: false,
+        unseenOnly: false,
         offset: offset ?? ''
       }
     }).pipe(

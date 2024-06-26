@@ -8,8 +8,8 @@
 </div>
 <div class="w-full py-2">
   <div class="container mx-auto flex justify-center gap-5">
-    <p-button pTooltip="Share" tooltipPosition="top" [outlined]="true" size="small" icon="pi pi-share-alt"
-      [rounded]="true" />
+    <p-button (onClick)="showInviteDialog = true" pTooltip="Share" tooltipPosition="top" [outlined]="true" size="small"
+      icon="pi pi-share-alt" [rounded]="true" />
     <p-divider layout="vertical" />
     <p-button (onClick)="showDevicesConfigSidebar = true" [severity]="devicesConfigured() ? undefined : 'danger'"
       tooltipPosition="top" pTooltip="Settings" icon="pi pi-cog" [outlined]="true" [rounded]="true" />
@@ -65,9 +65,9 @@
     }
   </ng-template>
 </p-sidebar>
-<p-dialog [visible]="true" [modal]="true" [draggable]="false" [resizable]="false" header="Invite others">
+<p-dialog (onShow)="onInviteDialogOpened()" [(visible)]="showInviteDialog" [modal]="true" [draggable]="false" [resizable]="false" header="Invite others">
   <p>Copy the link below to invite others to join your room for more fun</p>
-  <h3>Invite using a link</h3>
+  <h3>Invite link</h3>
   @defer(when !gettingShareLink()) {
   <div class="flex items-center gap-2">
     <code class="text-ellipsis line-clamp-1 text-sm">{{ shareLink() }}</code>
@@ -76,10 +76,4 @@
   }@placeholder (minimum 10s) {
   <p-progressSpinner styleClass="w-[2rem] h-[2rem]" strokeWidth="3" animationDuration=".5s" />
   }
-  <p-divider />
-  <h3>Invite using email</h3>
-  <p-autoComplete placeholder="User email" appendTo="body" styleClass="w-full" inputStyleClass="w-full"
-    panelStyleClass="w-full">
-    
-  </p-autoComplete>
 </p-dialog>

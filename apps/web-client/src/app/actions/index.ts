@@ -164,3 +164,13 @@ export class RemoteProducerClosed {
   static type = '[Room] Remote Producer closed';
   constructor(readonly sessionId: string, readonly producerId: string) { }
 }
+
+export class CreateInviteLink {
+  static type = '[Room] Create invite link';
+  constructor(readonly redirectPath: string, readonly key: string) { }
+}
+
+export class InviteLinkCreated {
+  static type = '[Room] Invite link created';
+  constructor(readonly link: string) { }
+}

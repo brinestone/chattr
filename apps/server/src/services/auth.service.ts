@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { compare } from "bcrypt";
-import { UserEntity } from "../models";
+import { User } from "../models";
 import { UserService } from "./user.service";
 import { ISignupRequest } from "@chattr/interfaces";
 
@@ -17,10 +17,10 @@ export class AuthService {
         const user = await this.userService.findUserByEmailAsync(email);
         if (!user || !(await compare(password, user.passwordHash))) throw new UnauthorizedException('Invalid email or password');
 
-        return new UserEntity(user.toObject());
+        return new User(user.toObject());
     }
 
-    async loginUser(user: UserEntity) {
+    async loginUser(user: User) {
         const { email, id, name } = user;
         const token = await this.jwtService.signAsync({
             username: email,

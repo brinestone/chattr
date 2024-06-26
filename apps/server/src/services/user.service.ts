@@ -3,21 +3,33 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { genSalt, hash } from 'bcrypt';
 import { Model, UpdateQuery } from 'mongoose';
-import { UserEntity } from '../models';
+import { User } from '../models';
+import { UserDto } from '@chattr/dto';
+import { plainToInstance } from 'class-transformer';
 
 @Injectable()
 export class UserService {
   constructor(
-    @InjectModel(UserEntity.name) private userModel: Model<UserEntity>,
+    @InjectModel(User.name) private userModel: Model<User>,
     // @InjectModel(UserSession.name) private sessionModel: Model<UserSession>
   ) {
+  }
+
+  async searchUsersAsync(query: string, limit: number) {
+    const docs = await this.userModel.find({ $text: { $search: query, $caseSensitive: false } })
+      .sort({ name: 'asc' })
+      .limit(limit);
+
+    if (docs.length == 0) return [];
+
+    return docs.map(doc => plainToInstance(UserDto, doc.toObject()))
   }
 
   async findByIdInternalAsync(id: string) {
     return this.userModel.findById(id).exec();
   }
 
-  async updateUserInternalAsync(id: string, update: UpdateQuery<UserEntity>) {
+  async updateUserInternalAsync(id: string, update: UpdateQuery<User>) {
     return this.userModel.findByIdAndUpdate(id, update);
   }
 

@@ -1,4 +1,5 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { ICreateRoomInviteRequest, IRoomMembership, RoomMemberRole } from '@chattr/interfaces';
+import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, PreconditionFailedException, UnprocessableEntityException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash } from 'crypto';
 import { createWorker } from 'mediasoup';
@@ -15,24 +16,26 @@ import {
   WebRtcTransport,
   Worker,
 } from 'mediasoup/node/lib/types';
-import { Model, Types } from 'mongoose';
+import { HydratedDocument, Model, Types } from 'mongoose';
 import { cpus, networkInterfaces } from 'os';
 import {
   concatMap,
   filter,
   forkJoin,
   from,
+  fromEvent,
   identity,
   mergeMap,
   of,
   take
 } from 'rxjs';
-import { RoomEntity, RoomMemberEntity, RoomSessionEntity, UserEntity } from '../models';
+import { Room, RoomMembership, RoomSession, User } from '../models';
+import { InvitationEventData, UpdatesService } from './updates.service';
+import { UserService } from './user.service';
+import { Events } from '../events';
+import EventEmitter from 'events';
 
-type RouterWebRtcServerMap = Record<
-  string,
-  { router: Router; server: WebRtcServer }
->;
+const ONE_HOUR = 3_600_000;
 
 let ip = '';
 
@@ -66,32 +69,117 @@ function computeTransportId(userId: string, sessionId: string) {
 }
 
 @Injectable()
-export class RoomService {
+export class RoomService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(RoomService.name);
   private readonly workers = Array<Worker>(Math.min(5, cpus().length));
   private readonly webRtcServers = Array<WebRtcServer>(this.workers.length);
   private readonly routers: Record<string, Router> = {};
   private readonly webRtcTransports: Record<string, WebRtcTransport> = {};
   private readonly producers: Record<string, Producer> = {};
+  readonly observer = new EventEmitter();
   private readonly consumers: Record<string, Consumer> = {};
   private nextWorkerIndex = -1;
   constructor(
-    @InjectModel(RoomEntity.name) private model: Model<RoomEntity>,
-    @InjectModel(RoomMemberEntity.name)
-    private memberModel: Model<RoomMemberEntity>,
-    @InjectModel(RoomSessionEntity.name)
-    private sessionModel: Model<RoomSessionEntity>
-  ) { }
+    @InjectModel(Room.name) private model: Model<Room>,
+    @InjectModel(RoomMembership.name)
+    private memberModel: Model<RoomMembership>,
+    @InjectModel(RoomSession.name)
+    private sessionModel: Model<RoomSession>,
+    private updatesService: UpdatesService,
+    private userService: UserService
+  ) {
+  }
 
   private get nextWorker() {
     return this.workers[++this.nextWorkerIndex % this.workers.length];
+  }
+
+  async isMemberInRoles(userId: string, roomId: string, roles: RoomMemberRole[]) {
+    const member = await this.memberModel.exists({
+      userId,
+      roomId,
+      isBanned: { $ne: true },
+      pending: { $ne: true },
+      $or: [
+        { role: 'owner' },
+        { role: { $in: roles } }
+      ]
+    });
+
+    return !!member;
+  }
+
+  async admitMember(userId: string, memberId: string, displayName: string, roomId: string, clientIp: string, avatar?: string) {
+    this.logger.verbose(`Admission approved for user: ${userId} into the room: ${roomId}`);
+    const staleDate = new Date(Date.now() - ONE_HOUR);
+    const sessionExists = await this.sessionModel.exists({
+      clientIp,
+      serverIp: ip,
+      userId,
+      member: memberId,
+      updatedAt: {
+        $gte: staleDate
+      }
+    });
+    if (sessionExists) throw new UnprocessableEntityException('Member specified has already been admitted');
+    const session = await new this.sessionModel({
+      userId,
+      member: memberId,
+      serverIp: ip,
+      displayName,
+      avatar,
+      connected: false,
+      clientIp
+    }).save();
+
+    return new RoomSession(session.toObject());
+  }
+
+  async createInvite(request: ICreateRoomInviteRequest, invitorId: string) {
+    const memberDoc = await this.memberModel.findOne({
+      isBanned: { $ne: true },
+      pending: { $ne: true },
+      userId: invitorId,
+      roomId: request.roomId
+    });
+    const hasElevatedPrivileges = await this.userHasElevatedPrivileges(memberDoc);
+
+    if (!hasElevatedPrivileges) throw new ForbiddenException('Operation denied');
+
+    if (request.userId && await this.isUserARoomMember(request.userId, request.roomId)) throw new ConflictException('The specified user is already a member of the room specified');
+    const [url, inviteId] = await this.updatesService.createInvite(request);
+    if (request.userId) {
+      const room = await this.model.findById(request.roomId);
+      const invitor = await this.userService.findByIdInternalAsync(invitorId);
+
+      await new this.memberModel({
+        isBanned: false,
+        pending: true,
+        roomId: request.roomId,
+        userId: request.userId,
+        inviteId,
+        role: 'guest'
+      }).save();
+
+      this.updatesService.createNotification({
+        body: `${invitor.name} invites you to join them in ${room.name} as a guest`,
+        sender: invitorId,
+        title: 'Invitation',
+        image: invitor.avatar,
+        to: request.userId,
+        data: {
+          url
+        }
+      });
+    }
+    return url;
   }
 
   async findSessionById(sessionId: string) {
     const sessionDoc = await this.sessionModel.findById(sessionId);
     if (!sessionDoc) throw new NotFoundException('Session not found');
 
-    return new RoomSessionEntity(sessionDoc.toObject());
+    return new RoomSession(sessionDoc.toObject());
   }
 
   closeConsumer(consumerId: string) {
@@ -157,7 +245,7 @@ export class RoomService {
       connected: true
     }).exec();
 
-    return sessions.map(session => new RoomSessionEntity(session.toObject()))
+    return sessions.map(session => new RoomSession(session.toObject()))
   }
 
   async findRoomWithSubscriber(userId: string, roomId: string) {
@@ -169,20 +257,21 @@ export class RoomService {
     if (!membership || !roomDoc) throw new NotFoundException('Room not found');
     if (membership.isBanned) throw new ForbiddenException('You are not permitted to join access this room');
 
-    return new RoomEntity(roomDoc.toObject());
+    return new Room(roomDoc.toObject());
   }
 
   async getSubscribedRoomsFor(userId: string) {
     const memberships = await this.memberModel.find({
       isBanned: { $ne: true },
+      pending: { $ne: true },
       userId
     }).exec();
 
     return await Promise.all(memberships.map(doc => doc.roomId)
-      .map(roomId => this.model.findById(roomId).exec().then(doc => new RoomEntity(doc.toObject()))));
+      .map(roomId => this.model.findById(roomId).exec().then(doc => new Room(doc.toObject()))));
   }
 
-  async validateRoomMembership(roomId: string, { id }: UserEntity): Promise<[RoomEntity, RoomMemberEntity]> {
+  async validateRoomMembership(roomId: string, { id }: User): Promise<[Room, IRoomMembership]> {
     const roomDoc = await this.model.findById(roomId);
     if (!roomDoc) throw new NotFoundException(`Room not found`);
 
@@ -192,7 +281,7 @@ export class RoomService {
     });
 
     if (!memberDoc) throw new ForbiddenException(`Not a member of the room specified`);
-    return [new RoomEntity(roomDoc.toObject()), new RoomMemberEntity(memberDoc.toObject())];
+    return [new Room(roomDoc.toObject()), new RoomMembership(memberDoc.toObject())];
   }
 
   async createRoom(name: string, userId: string) {
@@ -200,19 +289,20 @@ export class RoomService {
 
     return await dbSession
       .withTransaction(async () => {
-        const roomModel = await new this.model({
+        const roomModel = new this.model({
           name,
           members: [],
         });
 
-        const memberModel = await new this.memberModel({
+        const memberModel = new this.memberModel({
           userId,
           isBanned: false,
+          pending: false,
           roomId: roomModel,
           role: 'owner',
         });
 
-        roomModel.set({ members: [memberModel] })
+        roomModel.set({ members: [memberModel] });
         const ans = await Promise.all([memberModel.save(), roomModel.save()])
         // await dbSession.commitTransaction();
         return ans;
@@ -323,13 +413,85 @@ export class RoomService {
     ).subscribe(({ address }) => {
       ip = address;
       this.logger.log(`IP Address resolved to: ${ip}`);
-    })
+    });
+
+    fromEvent(this.updatesService.observer, Events.InvitationAccepted).subscribe(({ inviteId, roomId, userId, targeted }: InvitationEventData) => {
+      this.approveMembership(inviteId, userId, roomId, targeted);
+    });
+
+    fromEvent(this.updatesService.observer, Events.InvitationDenied).subscribe(({ inviteId, roomId, userId, targeted }: InvitationEventData) => {
+      this.removePendingMembership(inviteId, userId, roomId);
+    });
   }
 
-  beforeApplicationShutdown() {
+  async removePendingMembership(inviteId: string, userId: string, roomId: string) {
+    const result = await this.memberModel.deleteOne({
+      pending: { $ne: false },
+      userId,
+      inviteId,
+      roomId
+    }).exec();
+
+    if (result.deletedCount == 0) this.logger.warn(`Could not remove any pending memberships for user: ${userId} in room: ${roomId} - No memberships were found`);
+    else this.logger.verbose(`Pending membership for user: ${userId} in room: ${roomId} was removed succesfully`);
+  }
+
+  async approveMembership(inviteId: string, userId: string, roomId: string, targeted: boolean) {
+    let membership: HydratedDocument<RoomMembership>;
+    if (targeted) {
+      membership = await this.memberModel.findOne({
+        userId,
+        inviteId,
+        isBanned: { $ne: true },
+        pending: { $ne: false },
+        roomId
+      }).exec();
+
+      if (!membership) {
+        this.logger.warn(`Could not approve membership of user: ${userId} into room: ${roomId}`);
+        return;
+      }
+
+      membership.pending = false;
+      await membership.save();
+    } else {
+      membership = await this.memberModel.findOne({
+        userId,
+        inviteId,
+        isBanned: { $ne: true },
+        pending: { $ne: false },
+        roomId
+      }).exec();
+
+      if (!membership) {
+        membership = await new this.memberModel({
+          isBanned: false,
+          pending: false,
+          roomId: roomId,
+          userId: userId,
+          inviteId,
+          role: 'guest'
+        }).save();
+      }
+    }
+    this.logger.verbose(`Membership for user: ${userId} has been approved`);
+
+    await this.model.findByIdAndUpdate(roomId, {
+      $push: {
+        members: membership
+      },
+      $inc: {
+        __v: 1
+      }
+    });
+  }
+
+  onApplicationShutdown() {
     this.logger.verbose('Shutting down workers...');
     this.workers.forEach((worker) => worker.close());
   }
+
+
 
   async closeProducer(userId: string, sessionId: string, producerId: string) {
     const sessionDoc = await this.sessionModel.findById(sessionId);
@@ -346,8 +508,8 @@ export class RoomService {
     producer.close();
   }
 
-  private async userHasElevatedPrivileges(memberId: string) {
-    const memberDoc = await this.memberModel.findById(memberId);
+  private async userHasElevatedPrivileges(member?: string | HydratedDocument<RoomMembership>) {
+    const memberDoc = typeof member == 'string' ? await this.memberModel.findById(member) : member;
     if (!memberDoc) return false;
 
     return !memberDoc.isBanned && (memberDoc.role == 'owner' || memberDoc.role == 'moderator');
@@ -356,6 +518,7 @@ export class RoomService {
   private async isUserARoomMember(userId: string, roomId: string) {
     const membership = await this.memberModel.exists({
       isBanned: { $ne: true },
+      pending: { $ne: true },
       userId,
       roomId
     }).exec();
@@ -375,13 +538,14 @@ export class RoomService {
     if (!isMember) throw new ForbiddenException('You are not permitted to access this room');
 
     const isSessionOwner = this.isSessionOwner(sessionId, userId);
+    const hasElevatedPrivileges = await this.userHasElevatedPrivileges(userId);
 
     const transportId = computeTransportId(userId, sessionId);
     const { iceParameters, iceCandidates, dtlsParameters, id } = await this.assertWebRtcTransport(roomId, transportId);
     const rtpCapabilities = this.routers[roomId].rtpCapabilities;
 
     this.logger.verbose(`User: ${userId} has been added to ${isSessionOwner ? 'their own' : 'the'} session: ${sessionId} in room: ${roomId} successfully. Awaiting final connection to their WebRTC transport`);
-    return { isSessionOwner, params: { rtpCapabilities, transportParams: { iceParameters, iceCandidates, dtlsParameters, id } } };
+    return { isSessionOwner, hasElevatedPrivileges, params: { rtpCapabilities, transportParams: { iceParameters, iceCandidates, dtlsParameters, id } } };
   }
 
   async createProducer(sessionId: string, userId: string, rtpParameters: RtpParameters, kind: MediaKind) {
@@ -402,7 +566,6 @@ export class RoomService {
     }).exec();
 
     producer.observer.on('close', async () => {
-      const { roomId } = await this.memberModel.findById(sessionDoc.member).exec();
       const index = sessionDoc.producers.findIndex(x => x == producer.id);
       if (index >= 0)
         await sessionDoc.updateOne({
@@ -432,16 +595,17 @@ export class RoomService {
       .then(() => this.logger.verbose(`User: ${userId} has connected their WebRTC transport::${transport.id} on session: ${sessionId}`));
   }
 
-  async assertSession(roomId: string, userId: string, clientIp: string, displayName: string) {
+  async assertSession(roomId: string, userId: string, clientIp: string, displayName: string, avatar?: string) {
     const memberDoc = await this.memberModel.findOne({
-      userId: userId,
+      userId,
       roomId
     });
 
-    if (!memberDoc) throw new NotFoundException('Room not found');
+    if (!memberDoc) throw new NotFoundException('You are not a member of this room');
     if (memberDoc.isBanned) throw new ForbiddenException('You are forbidden to access this room');
+    if (memberDoc.pending) throw new PreconditionFailedException('Your invitation into this room has not yet been accepted');
 
-    const staleDate = new Date(Date.now() - 3_600_000);
+    const staleDate = new Date(Date.now() - ONE_HOUR);
     let sessionDoc = await this.sessionModel.findOne({
       clientIp,
       serverIp: ip,
@@ -453,11 +617,18 @@ export class RoomService {
     }).exec();
 
     if (!sessionDoc) {
+      const hasElevatedPrivileges = this.userHasElevatedPrivileges(memberDoc);
+      if (!hasElevatedPrivileges) {
+        this.observer.emit(Events.AdmissionPending, { memberId: memberDoc._id.toString(), userId, displayName, avatar, roomId, clientIp });
+        this.logger.verbose(`User: ${userId} has attempted to join room: ${roomId} but does not have a recent session. Admission is pending`)
+        throw new PreconditionFailedException('Please wait for either a moderator or the room owner to admit you into this session');
+      }
       sessionDoc = await new this.sessionModel({
         userId,
         member: memberDoc,
         serverIp: ip,
         displayName,
+        avatar,
         connected: false,
         clientIp
       }).save();
@@ -468,7 +639,7 @@ export class RoomService {
       await sessionDoc.updateOne({ $inc: { __v: 1 } }).exec();
     }
 
-    const session = new RoomSessionEntity(sessionDoc.toObject());
+    const session = new RoomSession(sessionDoc.toObject());
     return session;
   }
 

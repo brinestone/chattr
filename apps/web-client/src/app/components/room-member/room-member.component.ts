@@ -1,6 +1,6 @@
 import { AfterViewInit, Component, DestroyRef, EventEmitter, Injector, OnDestroy, Output, computed, effect, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { RoomMemberSession } from '@chattr/interfaces';
+import { IRoomSession } from '@chattr/interfaces';
 import { Actions, dispatch, ofActionCompleted, ofActionDispatched, select } from '@ngxs/store';
 import { Device } from 'mediasoup-client';
 import { Consumer } from 'mediasoup-client/lib/Consumer';
@@ -23,7 +23,7 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
   private readonly actions$ = inject(Actions);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
-  readonly session = input.required<RoomMemberSession>();
+  readonly session = input.required<IRoomSession>();
   private readonly producibleSession = select(Selectors.producibleSession);
   private readonly joinSessionFn = dispatch(JoinSession);
   private readonly transportConnectFn = dispatch(ConnectTransport);
@@ -49,13 +49,14 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
   @Output()
   readonly errored = new EventEmitter<Error>();
   readonly avatar = computed(() => {
-    const { displayName } = this.session();
+    const { displayName, avatar } = this.session();
+    if (avatar) return avatar;
     const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').substring(1);
-    const url = `https://api.dicebear.com/9.x/open-peeps/svg?seed=${displayName.split(' ')[0]}&scale=80&size=100&backgroundColor=${bgColor}&backgroundType=gradientLinear`;
-    return url;
+    const defaultUrl = `https://api.dicebear.com/9.x/open-peeps/svg?seed=${encodeURIComponent(displayName)}&scale=80&size=100&backgroundColor=${bgColor}&backgroundType=gradientLinear`;
+    return defaultUrl;
   });
 
-  private readonly device = new Device();
+  private device = new Device();
   private transport?: Transport;
 
   ngOnDestroy(): void {
@@ -280,6 +281,7 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
   }
 
   private async setupDevice(rtpCapabilities: RtpCapabilities) {
+    this.device = new Device();
     await this.device.load({ routerRtpCapabilities: rtpCapabilities });
   }
 }

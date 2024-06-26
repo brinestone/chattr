@@ -6,28 +6,32 @@ import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './auth/jwt-auth.strategy';
 import { LocalStrategy } from './auth/local-auth.strategy';
 import { AuthController } from './controller/auth.controller';
-import { NotificationController } from './controller/notification.controller';
 import { RoomController } from './controller/room.controller';
+import { InvitesController, UpdatesController } from './controller/updates.controller';
 import { UserController } from './controller/user.controller';
 import { AppGateway } from './gateways/app.gateway';
 import { LoggerMiddleware } from './middleware/logger.middleware';
-import { Notification, NotificationSchema, RoomEntity, RoomMemberEntity, RoomMemberSchema, RoomSchema, RoomSessionEntity, RoomSessionSchema, SessionSchema, UserEntity, UserSchema, UserSession } from './models';
+import { Invite, InviteSchema, Notification, NotificationSchema, Room, RoomMemberSchema, RoomMembership, RoomSchema, RoomSession, RoomSessionSchema, Update, UpdateSchema, User, UserSchema } from './models';
 import { AuthService } from './services/auth.service';
-import { NotificationService } from './services/notifications.service';
 import { RoomService } from './services/room.service';
+import { UpdatesService } from './services/updates.service';
 import { UserService } from './services/user.service';
-// import { EventEmitterModule } from '@nestjs/event-emitter';
 
 @Global()
 @Module({
   imports: [
     MongooseModule.forFeature([
-      { name: UserEntity.name, schema: UserSchema },
-      { name: RoomMemberEntity.name, schema: RoomMemberSchema },
-      { name: RoomSessionEntity.name, schema: RoomSessionSchema },
-      { name: UserSession.name, schema: SessionSchema },
-      { name: RoomEntity.name, schema: RoomSchema },
-      { name: Notification.name, schema: NotificationSchema }
+      { name: User.name, schema: UserSchema },
+      { name: RoomMembership.name, schema: RoomMemberSchema },
+      { name: RoomSession.name, schema: RoomSessionSchema },
+      // { name: UserSession.name, schema: SessionSchema },
+      { name: Room.name, schema: RoomSchema },
+      {
+        name: Update.name, schema: UpdateSchema, discriminators: [
+          { name: Invite.name, schema: InviteSchema },
+          { name: Notification.name, schema: NotificationSchema }
+        ]
+      }
     ])
   ],
   exports: [
@@ -65,12 +69,12 @@ class DataModule { }
     }),
     DataModule
   ],
-  controllers: [RoomController, UserController, AuthController, NotificationController],
+  controllers: [RoomController, UserController, InvitesController, AuthController, UpdatesController],
   providers: [
     RoomService,
     AuthService,
-    AppGateway, 
-    NotificationService,
+    AppGateway,
+    UpdatesService,
     JwtStrategy,
     LocalStrategy,
     UserService

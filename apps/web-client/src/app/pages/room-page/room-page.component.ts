@@ -9,10 +9,9 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Actions, dispatch, ofActionDispatched, select } from '@ngxs/store';
 import { MessageService } from 'primeng/api';
-import { AutoCompleteModule } from 'primeng/autocomplete';
 import { BadgeModule } from 'primeng/badge';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
@@ -23,7 +22,7 @@ import { SidebarModule } from 'primeng/sidebar';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { EMPTY, map, switchMap, take } from 'rxjs';
-import { ConnectToRoom, DevicesFound, FindDevices, SetAudioDevice, SetVideoDevice, ToggleAudio, ToggleVideo } from '../../actions';
+import { ConnectToRoom, CreateInviteLink, DevicesFound, FindDevices, SetAudioDevice, SetVideoDevice, ToggleAudio, ToggleVideo } from '../../actions';
 import { RoomMemberComponent } from '../../components/room-member/room-member.component';
 import { Selectors } from '../../state/selectors';
 import { errorToMessage } from '../../util';
@@ -37,7 +36,6 @@ import { errorToMessage } from '../../util';
     NgStyle,
     SlicePipe,
     DropdownModule,
-    AutoCompleteModule,
     ProgressSpinnerModule,
     NgClass,
     DividerModule,
@@ -52,23 +50,27 @@ import { errorToMessage } from '../../util';
   styleUrl: './room-page.component.scss',
 })
 export class RoomPageComponent implements OnInit {
-  private readonly sessionConnectFn = dispatch(ConnectToRoom);
+  private readonly roomConnectFn = dispatch(ConnectToRoom);
   private readonly loadDevicesFn = dispatch(FindDevices);
   private readonly setAudioDeviceFn = dispatch(SetAudioDevice);
   private readonly videoToggleFn = dispatch(ToggleVideo);
   private readonly audioToggleFn = dispatch(ToggleAudio);
   private readonly setVideoDeviceFn = dispatch(SetVideoDevice);
+  private readonly createInviteLinkFn = dispatch(CreateInviteLink);
+  private readonly roomId = inject(ActivatedRoute).snapshot.params['id'] as string;
   private readonly activatedRoute = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly messageService = inject(MessageService);
   private readonly actions$ = inject(Actions);
   private readonly preferredAudioDevice = select(Selectors.audioInDevice);
   private readonly preferredVideoDevice = select(Selectors.videoInDevice);
   readonly gettingShareLink = signal(false);
-  readonly shareLink = signal('https://localhost:43200/rooms/667b467cf7d7a9d6807ab80c')
+  readonly shareLink = select(Selectors.inviteLink);
   readonly videoDisabled = select(Selectors.isVideoDisabled);
   readonly audioDisabled = select(Selectors.isAudioDisabled);
   readonly devicesConfigured = select(Selectors.devicesConfigured);
   showDevicesConfigSidebar = false;
+  showInviteDialog = false;
   private readonly mediaDevices = toSignal(this.actions$.pipe(
     ofActionDispatched(DevicesFound),
     map(({ devices }) => devices)
@@ -120,8 +122,7 @@ export class RoomPageComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    const roomId = String(this.activatedRoute.snapshot.params['id']);
-    this.sessionConnectFn(roomId);
+    this.roomConnectFn(this.roomId);
   }
 
   onDeviceConfigSidebarShown() {
@@ -156,13 +157,24 @@ export class RoomPageComponent implements OnInit {
   }
 
   onCopyShareLinkButtonClicked() {
-    console.log('test');
-    navigator.clipboard.writeText(this.shareLink()).then(() => {
+    const inviteLink = this.shareLink();
+    if (!inviteLink) return;
+    navigator.clipboard.writeText(inviteLink).then(() => {
       this.messageService.add({
         severity: 'info',
         summary: 'Info',
         detail: 'Invite link was copied to your clipboard'
       })
+    });
+  }
+
+  onInviteDialogOpened() {
+    const redirectPath = this.router.createUrlTree(['../../invite/ack'], { relativeTo: this.activatedRoute }).toString();
+    console.log(redirectPath);
+    this.gettingShareLink.set(true);
+    this.createInviteLinkFn(redirectPath, 'code').subscribe({
+      error: () => this.gettingShareLink.set(false),
+      complete: () => this.gettingShareLink.set(false),
     });
   }
 }

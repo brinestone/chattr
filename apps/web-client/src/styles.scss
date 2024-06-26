@@ -18,3 +18,13 @@ html {
 body {
     @apply bg-[var(--primary-50)];
 }
+
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    @apply m-0;
+}
