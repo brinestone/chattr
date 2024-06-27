@@ -5,39 +5,46 @@ import { jwtDecode } from 'jwt-decode';
 import { Observable, catchError } from 'rxjs';
 import { environment } from '../../environments/environment.development';
 import { parseHttpClientError } from '../util';
-// import {} from 'event-source';
+import { EventSourcePlus } from 'event-source-plus';
 @Injectable({
   providedIn: 'root'
 })
 export class UserService {
-
   private readonly http = inject(HttpClient);
 
   isSignedIn(jwt: string) {
-    const { exp } = jwtDecode(jwt);
+    try {
+      const { exp } = jwtDecode(jwt);
 
-    if (exp === undefined) return false;
-    const now = Date.now();
+      if (exp === undefined) return false;
+      const now = Date.now();
 
-    return (exp * 1000) > now;
+      return (exp * 1000) > now;
+    } catch (err) {
+      return false;
+    }
   }
 
   getLiveNotifications(authToken: string) {
     // const { sub } = jwtDecode(authToken);
     return new Observable<INotification>(subscriber => {
-      const eventSource = new EventSource(`${environment.backendOrigin}/updates/live`, {
-
+      const eventSource = new EventSourcePlus(`${environment.backendOrigin}/updates/live`, {
+        headers: {
+          authorization: `Bearer ${authToken}`
+        }
       });
-
-      subscriber.add(() => eventSource.close());
-
-      eventSource.onmessage = ({ data }: MessageEvent) => {
-        subscriber.next(JSON.parse(data));
-      }
-      eventSource.onerror = (e: Event) => {
-        console.error(e);
-        subscriber.error(e);
-      }
+      eventSource.retryInterval = 5000;
+      eventSource.retryCount = 20;
+      const controller = eventSource.listen({
+        onMessage: ({ data }) => {
+          subscriber.next(JSON.parse(data));
+        },
+        onRequestError: ({ error }) => {
+          console.error(error);
+          subscriber.error(error);
+        }
+      });
+      subscriber.add(() => controller.abort());
     });
   }
 

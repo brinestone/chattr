@@ -216,6 +216,7 @@ export const RoomSessionSchema = SchemaFactory.createForClass(
 export type Principal = {
   email: string;
   userId: string;
+  displayName: string;
 }
 
 @Schema()

@@ -65,8 +65,10 @@
     }
   </ng-template>
 </p-sidebar>
-<p-dialog (onShow)="onInviteDialogOpened()" [(visible)]="showInviteDialog" [modal]="true" [draggable]="false" [resizable]="false" header="Invite others">
+<p-dialog (onShow)="onInviteDialogOpened()" [(visible)]="showInviteDialog" [modal]="true" [draggable]="false"
+  [resizable]="false" header="Invite others">
   <p>Copy the link below to invite others to join your room for more fun</p>
+  <p-divider />
   <h3>Invite link</h3>
   @defer(when !gettingShareLink()) {
   <div class="flex items-center gap-2">

@@ -4,11 +4,12 @@ import { InjectModel } from "@nestjs/mongoose";
 import { isMongoId } from "class-validator";
 import EventEmitter from "events";
 import { FilterQuery, HydratedDocument, Model, Types, UpdateQuery } from "mongoose";
-import { concatMap, filter, from, map, of, switchMap, zip } from "rxjs";
+import { filter, fromEvent, map } from "rxjs";
 import { Events } from "../events";
-import { Invite, Notification, NotificationDocument, Update } from '../models';
+import { Invite, Notification, Update } from '../models';
 import { generateRandomToken } from "../util";
 import { UserService } from "./user.service";
+import { instanceToPlain } from "class-transformer";
 
 type MessageEvent<T = Notification> = {
     event: string,
@@ -88,9 +89,11 @@ export class UpdatesService {
     }
 
     async createNotification({ body, title, to, sender, data, image }: ICreateNotificationRequest) {
-        await new this.notificationModel({
+        const doc = await new this.notificationModel({
             body, title, to, data, from: sender, image
         }).save();
+        const notification = new Notification(doc.toObject());
+        this.observer.emit(Events.NotificationSent, notification);
     }
 
     async markAsSeen(...ids: string[]) {
@@ -121,27 +124,9 @@ export class UpdatesService {
 
 
     getLiveNotifications(userId: string) {
-        return from(this.userService.findByIdInternalAsync(userId)).pipe(
-            concatMap(userDoc => {
-                const resumeToken = userDoc.notificationResumeToken;
-                const watchStream = this.notificationModel.watch<NotificationDocument>([], { resumeAfter: resumeToken });
-                return zip([
-                    userDoc.updateOne({
-                        $set: { notificationResumeToken: watchStream.resumeToken }
-                    }).exec(),
-                    of(watchStream)
-                ])
-            }),
-            switchMap(([_, watchStream]) => {
-                return from(watchStream).pipe(
-                    map(event => event as { operationType: string, fullDocument: NotificationDocument }),
-                    filter(({ operationType, fullDocument: { to } }) => operationType == 'insert' && to.toString() == userId),
-                    map(({ fullDocument: data }) => ({
-                        event: 'Notification',
-                        data: new Notification(data.toObject())
-                    } as MessageEvent))
-                )
-            })
+        return fromEvent(this.observer, Events.NotificationSent).pipe(
+            filter(({ to }: Notification) => to.toString() == userId),
+            map(data => ({ data: instanceToPlain(data), event: 'Notification' } as MessageEvent))
         );
     }
 }

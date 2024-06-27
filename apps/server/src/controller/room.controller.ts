@@ -36,11 +36,9 @@ export class RoomController {
   }
 
   @Get(':id/session')
-
   @UseInterceptors(ClassSerializerInterceptor)
-  async assertSession(@Ip() clientIp: string, @Ctx('user') principal: Principal, @Param('id') roomId: string) {
-    const userDoc = await this.userService.findUserByEmailAsync(principal.email);
-    return await this.roomService.assertSession(roomId, principal.userId, clientIp, userDoc.name);
+  async assertSession(@Ip() clientIp: string, @Ctx('user') { userId, displayName }: Principal, @Param('id') roomId: string) {
+    return await this.roomService.assertSession(roomId, userId, clientIp, displayName);
   }
 
   @Get(':id')
