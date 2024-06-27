@@ -32,6 +32,7 @@ export interface IRoomSession extends IEntity {
 }
 
 export interface IInvite extends IEntity {
+  createdBy: string;
   roomId: string;
   expiresAt: Date;
   url: string;

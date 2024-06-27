@@ -1,4 +1,4 @@
-import { Body, ClassSerializerInterceptor, Controller, Get, ParseBoolPipe, ParseIntPipe, Put, Query, Sse, UseGuards, UseInterceptors, ValidationPipe } from "@nestjs/common";
+import { Body, ClassSerializerInterceptor, Controller, Get, Param, ParseBoolPipe, ParseIntPipe, Put, Query, Sse, UseGuards, UseInterceptors, ValidationPipe } from "@nestjs/common";
 import { JwtGuard } from "../guards/jwt.guard";
 import { UpdatesService } from "../services/updates.service";
 import { Ctx } from "../decorators/extract-from-context.decorator";
@@ -25,6 +25,14 @@ export class UpdatesController {
     constructor(
         private updatesService: UpdatesService
     ) { }
+
+    @Get('invite/:code')
+    @UseInterceptors(ClassSerializerInterceptor)
+    async getInviteInfo(
+        @Param('code') code: string
+    ) {
+        return await this.updatesService.getInvitationInfo(code);
+    }
 
     @Put('seen')
     async markAsSeen(@Body() { ids }: { ids: string[] }) {

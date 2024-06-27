@@ -1,5 +1,26 @@
-import { ICreateRoomInviteRequest, ILoginRequest, ISignupRequest, IUpdateInviteRequest } from "@chattr/interfaces";
+import { ICreateRoomInviteRequest, IInvite, ILoginRequest, ISignupRequest, IUpdateInviteRequest } from "@chattr/interfaces";
 import { IsBoolean, IsEmail, IsMongoId, IsNotEmpty, IsOptional, IsString, IsStrongPassword, IsUrl } from 'class-validator';
+
+export class ConnectedMemberDto {
+  displayName?: string;
+  avatar?: string;
+  constructor(data?: Partial<ConnectedMemberDto>) {
+    if (data) Object.assign(this, data);
+  }
+}
+
+export class InviteDto implements Pick<IInvite, 'roomId' | 'createdAt' | 'id'> {
+  roomId!: string;
+  createdAt!: Date;
+  id!: string;
+  displayName!: string;
+  image!: string;
+  connectedMembers: ConnectedMemberDto[] = [];
+  invitor!: ConnectedMemberDto;
+  constructor(data?: Partial<InviteDto>) {
+    if (data) Object.assign(this, data);
+  }
+}
 
 export class LoginRequest implements ILoginRequest {
   @IsNotEmpty()

@@ -147,7 +147,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     if (!hasElevatedPrivileges) throw new ForbiddenException('Operation denied');
 
     if (request.userId && await this.isUserARoomMember(request.userId, request.roomId)) throw new ConflictException('The specified user is already a member of the room specified');
-    const [url, inviteId] = await this.updatesService.createInvite(request);
+    const [url, inviteId] = await this.updatesService.createInvite(request, memberDoc._id.toString());
     if (request.userId) {
       const room = await this.model.findById(request.roomId);
       const invitor = await this.userService.findByIdInternalAsync(invitorId);
@@ -637,6 +637,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     } else {
       this.logger.verbose(`Reusing session: ${sessionDoc._id.toString()} for user: ${userId}`);
       await sessionDoc.updateOne({ $inc: { __v: 1 } }).exec();
+      await memberDoc.updateOne({ $inc: { __v: 1 }, $set: { activeSession: sessionDoc } })
     }
 
     const session = new RoomSession(sessionDoc.toObject());

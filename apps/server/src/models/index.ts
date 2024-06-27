@@ -91,7 +91,7 @@ export class RoomMembership extends BaseEntity implements IRoomMembership {
   userId?: string;
 
   @Prop({
-    ref: 'RoomEntity',
+    ref: 'Room',
     type: MongooseSchema.Types.ObjectId,
     required: true,
   })
@@ -102,6 +102,10 @@ export class RoomMembership extends BaseEntity implements IRoomMembership {
     { toPlainOnly: true }
   )
   roomId?: string;
+
+  @Prop({ type: MongooseSchema.Types.ObjectId })
+  @Exclude()
+  activeSession?: string;
 
   constructor(data?: Partial<IRoomMembership>) {
     super();
@@ -288,6 +292,10 @@ export class Invite extends BaseEntity implements IInvite, IUpdate {
   @Prop({ type: [MongooseSchema.Types.ObjectId], ref: User.name, _id: false })
   @Exclude()
   acceptors: string[];
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: RoomMembership.name, _id: false, required: true })
+  @Exclude()
+  createdBy: string;
 
   data: Record<string, unknown>;
 
