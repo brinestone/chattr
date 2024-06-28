@@ -3,11 +3,19 @@ import { Selector, createPropertySelectors } from "@ngxs/store";
 import { DeviceConfig, DeviceState, DeviceStateModel } from "./devices.state";
 import { ConnectedRoom, RoomState, RoomStateModel } from "./room.state";
 import { UserState, UserStateModel } from "./user.state";
+import { JwtPayload, jwtDecode } from "jwt-decode";
 
 export class Selectors {
     private static userSlices = createPropertySelectors<UserStateModel>(UserState);
     private static roomSlices = createPropertySelectors<RoomStateModel>(RoomState);
     private static deviceSlices = createPropertySelectors<DeviceStateModel>(DeviceState);
+
+    @Selector([Selectors.userSlices.accessToken])
+    static principal(accessToken?: string) {
+        if (!accessToken) return undefined;
+        const { avatar, displayName, email } = jwtDecode<{ avatar: string, displayName: string, email: string } & JwtPayload>(accessToken);
+        return { avatar, displayName, email };
+    }
 
     @Selector([Selectors.roomSlices.connectedRoom])
     static inviteLink(connectedRoom?: ConnectedRoom) {

@@ -135,8 +135,13 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnA
       socket.data['roomId'] = roomId;
       if (!isSessionOwner)
         socket.data['sessions'] = [...(socket.data['sessions'] ?? []), sessionId];
-      else socket.data['owningSession'] = sessionId;
       socket.data['userId'] = principal.userId;
+
+      if (isSessionOwner) {
+        socket.data['owningSession'] = sessionId;
+        this.logger.verbose(`User: ${principal.userId} has opened their session: ${sessionId}. Signaling room peers`);
+        socket.to(roomId).emit(Signaling.SessionOpened, { sessionId })
+      }
       return params;
     } catch (err) {
       throw new WsException(err);
@@ -154,10 +159,6 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnA
       await this.roomService
         .connectTransport(sessionId, dtlsParameters, principal.userId);
       const roomId = socket.data['roomId'];
-      if (await this.roomService.isSessionOwner(sessionId, principal.userId)) {
-        this.logger.verbose(`User: ${principal.userId} has connected their session's transport. Signaling room peers`);
-        socket.to(roomId).emit(Signaling.SessionOpened, { sessionId })
-      }
       return {};
     } catch (err) {
       throw new WsException(err);

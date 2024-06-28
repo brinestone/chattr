@@ -1,7 +1,8 @@
-import { ICreateRoomInviteRequest, IUpdateInviteRequest } from "@chattr/interfaces";
-import { ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { InviteDto } from "@chattr/dto";
+import { ICreateRoomInviteRequest, IUpdateInviteRequest, InviteInfo } from "@chattr/interfaces";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
-import { instanceToPlain } from "class-transformer";
+import { instanceToPlain, plainToInstance } from "class-transformer";
 import { isMongoId } from "class-validator";
 import EventEmitter from "events";
 import { FilterQuery, HydratedDocument, Model, Types, UpdateQuery } from "mongoose";
@@ -33,27 +34,119 @@ export class UpdatesService {
     private readonly inviteModel: Model<Invite>;
     readonly observer = new EventEmitter();
     constructor(
-        // @InjectModel(RoomMembership.name) private membershipModel: Model<RoomMembership>,
-        // @InjectModel(Room.name) private roomModel: Model<Room>,
-        @InjectModel(Update.name) private updatesModel: Model<Notification>) {
+        @InjectModel(Update.name) private updatesModel: Model<Update>) {
         this.notificationModel = updatesModel.discriminators[Notification.name];
         this.inviteModel = updatesModel.discriminators[Invite.name];
     }
 
     async getInvitationInfo(code: string) {
         const now = new Date();
-        const invite = await this.inviteModel.findOne({
-            code
-        })
-        .exec();
+        const results = await this.inviteModel.aggregate<InviteInfo>([
+            {
+                $match: {
+                    type: Invite.name,
+                    code,
+                    expiresAt: { $gt: now }
+                }
+            },
+            {
+                $lookup: {
+                    from: 'rooms',
+                    localField: 'roomId',
+                    foreignField: '_id',
+                    as: 'room'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'roommemberships',
+                    localField: 'room.members',
+                    foreignField: '_id',
+                    as: 'connectedMembers',
+                    pipeline: [
+                        {
+                            $match: {
+                                isBanned: { $ne: true },
+                                pending: { $ne: true },
+                                activeSession: { $ne: null }
+                            }
+                        },
+                        {
+                            $lookup: {
+                                from: 'users',
+                                localField: 'userId',
+                                foreignField: '_id',
+                                as: 'userAccount'
+                            }
+                        },
+                        {
+                            $unwind: {
+                                path: '$userAccount'
+                            }
+                        },
+                        {
+                            $project: {
+                                displayName: '$userAccount.name',
+                                _id: 0,
+                                avatar: '$userAccount.avatar'
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                $lookup: {
+                    from: 'roommemberships',
+                    localField: 'createdBy',
+                    foreignField: '_id',
+                    as: 'createdBy',
+                    pipeline: [
+                        {
+                            $lookup: {
+                                from: 'users',
+                                localField: 'userId',
+                                foreignField: '_id',
+                                as: 'userAccount'
+                            }
+                        },
+                        {
+                            $unwind: {
+                                path: '$userAccount'
+                            }
+                        },
+                        {
+                            $project: {
+                                _id: 0,
+                                displayName: '$userAccount.name',
+                                avatar: '$userAccount.avatar'
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                $unwind: { path: '$createdBy' }
+            },
+            {
+                $unwind: { path: '$room' }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    id: { $toString: '$_id' },
+                    roomId: { $toString: '$roomId' },
+                    createdAt: 1,
+                    displayName: '$room.name',
+                    image: '$room.image',
+                    connectedMembers: 1,
+                    createdBy: 1
+                }
+            }
+        ]);
 
-        if(!invite) throw new NotFoundException('Invitation not found');
-        const diff = now.valueOf() - invite.expiresAt.valueOf();
-        if(diff > 0) throw new ForbiddenException('Invitation expired');
+        if (results.length == 0) throw new NotFoundException('Invite not found or has expired');
 
-        await invite.populate(['createdBy', 'roomId.members']);
-        
-
+        return plainToInstance(InviteDto, results)[0];
     }
 
     async updateInvite({ accept: accepted, code }: IUpdateInviteRequest, actor: string) {

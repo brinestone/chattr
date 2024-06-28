@@ -29,7 +29,6 @@ export class RoomController {
   }
 
   @Get(':id/connectable-sessions')
-
   @UseInterceptors(ClassSerializerInterceptor)
   async findConnectableSessions(@Param('id') roomId: string, @Ctx('user') user: Principal) {
     return await this.roomService.findConnectableSessionsFor(roomId, user.userId);
@@ -42,21 +41,18 @@ export class RoomController {
   }
 
   @Get(':id')
-
   @UseInterceptors(ClassSerializerInterceptor)
   async getRoom(@Ctx('user') user: Principal, @Param('id') roomId: string) {
     return await this.roomService.findRoomWithSubscriber(user.userId, roomId);
   }
 
   @Get()
-
   @UseInterceptors(ClassSerializerInterceptor)
   async getRooms(@Ctx('user') principal: Principal) {
     return await this.roomService.getSubscribedRoomsFor(principal.userId);
   }
 
   @Post()
-
   async createRoom(
     @Body() { name }: { name: string },
     @Ctx('user') e: Principal

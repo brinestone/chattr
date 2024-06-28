@@ -76,8 +76,8 @@ export class RoomMembership extends BaseEntity implements IRoomMembership {
   @Type(() => String)
   @Prop({
     type: String,
-    enum: ['member', 'owner', 'moderator'],
-    default: 'member',
+    enum: ['guest', 'owner', 'moderator'],
+    default: 'guest',
   })
   role: RoomMemberRole;
 
@@ -103,7 +103,7 @@ export class RoomMembership extends BaseEntity implements IRoomMembership {
   )
   roomId?: string;
 
-  @Prop({ type: MongooseSchema.Types.ObjectId })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'RoomSession', _id: false })
   @Exclude()
   activeSession?: string;
 
@@ -157,6 +157,10 @@ export const RoomSchema = SchemaFactory.createForClass(Room).pre(
 
 @Schema({ timestamps: true })
 export class RoomSession extends BaseEntity implements IRoomSession {
+  @Exclude()
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: Room.name, required: true })
+  roomId: string;
+
   @Prop({ required: true })
   serverIp: string;
 

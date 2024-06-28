@@ -34,6 +34,7 @@ import { InvitationEventData, UpdatesService } from './updates.service';
 import { UserService } from './user.service';
 import { Events } from '../events';
 import EventEmitter from 'events';
+import { plainToInstance } from 'class-transformer';
 
 const ONE_HOUR = 3_600_000;
 
@@ -125,6 +126,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const session = await new this.sessionModel({
       userId,
       member: memberId,
+      roomId,
       serverIp: ip,
       displayName,
       avatar,
@@ -201,13 +203,16 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
       delete this.webRtcTransports[transportId];
     }
     await sessionDoc.updateOne({
+      $inc: { __v: 1 },
       $set: {
         producers: [],
         connected: false,
         endDate: new Date()
       }
     }).exec();
-
+    await memberDoc.set({
+      activeSession: null
+    }).save();
   }
 
   async createConsumer(sessionId: string, userId: string, producerId: string, rtpCapabilities: RtpCapabilities) {
@@ -237,15 +242,37 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     if (!membership || !roomDoc) throw new NotFoundException('Room not found');
     if (membership.isBanned) throw new ForbiddenException('You are not permitted to join access this room');
 
-    const staleDate = new Date(Date.now() - 3_600_000);
+    const otherMembers = await this.memberModel.find({
+      roomId,
+      userId: { $ne: userId },
+      activeSession: { $ne: null }
+    })
+      .exec();
 
     const sessions = await this.sessionModel.find({
-      userId: { $ne: userId },
-      updatedAt: { $gt: staleDate },
-      connected: true
+      _id: { $in: otherMembers.map(m => m.activeSession) },
+      connected: true,
+      serverIp: ip
     }).exec();
 
-    return sessions.map(session => new RoomSession(session.toObject()))
+    return sessions.filter(sessionDoc => {
+      const sessionTransportId = computeTransportId(sessionDoc.userId, sessionDoc._id.toString());
+      const sessionTransport = this.webRtcTransports[sessionTransportId];
+      if (sessionTransport?.closed === false) return true;
+      this.memberModel.updateOne({ _id: sessionDoc.member }, {
+        $inc: { __v: 1 },
+        $set: {
+          activeSession: null
+        }
+      }).exec();
+      sessionDoc.set({
+        connected: false,
+        producers: []
+      }).save();
+
+      return false;
+    })
+      .map(doc => new RoomSession(doc.toObject()));
   }
 
   async findRoomWithSubscriber(userId: string, roomId: string) {
@@ -437,53 +464,60 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   async approveMembership(inviteId: string, userId: string, roomId: string, targeted: boolean) {
-    let membership: HydratedDocument<RoomMembership>;
-    if (targeted) {
-      membership = await this.memberModel.findOne({
-        userId,
-        inviteId,
-        isBanned: { $ne: true },
-        pending: { $ne: false },
-        roomId
-      }).exec();
-
-      if (!membership) {
-        this.logger.warn(`Could not approve membership of user: ${userId} into room: ${roomId}`);
-        return;
-      }
-
-      membership.pending = false;
-      await membership.save();
-    } else {
-      membership = await this.memberModel.findOne({
-        userId,
-        inviteId,
-        isBanned: { $ne: true },
-        pending: { $ne: false },
-        roomId
-      }).exec();
-
-      if (!membership) {
-        membership = await new this.memberModel({
-          isBanned: false,
-          pending: false,
-          roomId: roomId,
-          userId: userId,
+    try {
+      let membership: HydratedDocument<RoomMembership>;
+      if (targeted) {
+        membership = await this.memberModel.findOne({
+          userId,
           inviteId,
-          role: 'guest'
-        }).save();
-      }
-    }
-    this.logger.verbose(`Membership for user: ${userId} has been approved`);
+          isBanned: { $ne: true },
+          pending: { $ne: false },
+          roomId
+        }).exec();
 
-    await this.model.findByIdAndUpdate(roomId, {
-      $push: {
-        members: membership
-      },
-      $inc: {
-        __v: 1
+        if (!membership) {
+          this.logger.warn(`Could not approve membership of user: ${userId} into room: ${roomId}`);
+          return;
+        }
+
+        membership.pending = false;
+        await membership.save();
+      } else {
+        membership = await this.memberModel.findOne({
+          userId,
+          isBanned: { $ne: true },
+          pending: { $ne: false },
+          roomId
+        }).exec();
+
+        if (!membership) {
+          membership = await new this.memberModel({
+            isBanned: false,
+            pending: false,
+            roomId: roomId,
+            userId: userId,
+            inviteId,
+            role: 'guest'
+          }).save();
+        } else {
+          await membership.set({
+            inviteId, pending: false
+          }).save();
+        }
       }
-    });
+      this.logger.verbose(`Membership for user: ${userId} has been approved`);
+
+      await this.model.findByIdAndUpdate(roomId, {
+        $push: {
+          members: membership
+        },
+        $inc: {
+          __v: 1
+        }
+      });
+    } catch (err) {
+      this.logger.error(err.message, err.stack);
+    }
   }
 
   onApplicationShutdown() {
@@ -529,7 +563,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
   async isSessionOwner(sessionId: string, userId: string) {
     return await this.sessionModel.exists({
       userId, _id: new Types.ObjectId(sessionId)
-    }).exec().then(doc => !!doc)
+    }).exec().then(doc => !!doc);
   }
 
   async joinSession(sessionId: string, roomId: string, userId: string) {
@@ -543,6 +577,12 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const transportId = computeTransportId(userId, sessionId);
     const { iceParameters, iceCandidates, dtlsParameters, id } = await this.assertWebRtcTransport(roomId, transportId);
     const rtpCapabilities = this.routers[roomId].rtpCapabilities;
+    await this.sessionModel.findByIdAndUpdate(sessionId, {
+      $set: {
+        serverIp: ip,
+        connected: true
+      }
+    }).exec();
 
     this.logger.verbose(`User: ${userId} has been added to ${isSessionOwner ? 'their own' : 'the'} session: ${sessionId} in room: ${roomId} successfully. Awaiting final connection to their WebRTC transport`);
     return { isSessionOwner, hasElevatedPrivileges, params: { rtpCapabilities, transportParams: { iceParameters, iceCandidates, dtlsParameters, id } } };
@@ -585,13 +625,6 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const transport = this.webRtcTransports[transportId];
     if (!transport) throw new NotFoundException('No such transport exists: ' + transportId)
     return await transport.connect({ dtlsParameters })
-      .then(async () => {
-        await this.sessionModel.findByIdAndUpdate(sessionId, {
-          $set: {
-            connected: true
-          }
-        }).exec();
-      })
       .then(() => this.logger.verbose(`User: ${userId} has connected their WebRTC transport::${transport.id} on session: ${sessionId}`));
   }
 
@@ -610,7 +643,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
       clientIp,
       serverIp: ip,
       userId,
-      member: memberDoc._id,
+      member: memberDoc,
       updatedAt: {
         $gte: staleDate
       }
@@ -629,6 +662,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
         serverIp: ip,
         displayName,
         avatar,
+        roomId,
         connected: false,
         clientIp
       }).save();
@@ -637,8 +671,8 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     } else {
       this.logger.verbose(`Reusing session: ${sessionDoc._id.toString()} for user: ${userId}`);
       await sessionDoc.updateOne({ $inc: { __v: 1 } }).exec();
-      await memberDoc.updateOne({ $inc: { __v: 1 }, $set: { activeSession: sessionDoc } })
     }
+    await memberDoc.updateOne({ $inc: { __v: 1 }, $set: { activeSession: sessionDoc } }).exec();
 
     const session = new RoomSession(sessionDoc.toObject());
     return session;

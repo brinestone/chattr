@@ -38,6 +38,17 @@ export interface IInvite extends IEntity {
   url: string;
 }
 
+export interface IConnectedMember {
+  displayName: string;
+  avatar?: string;
+}
+export interface InviteInfo extends Pick<IInvite, 'roomId' | 'createdAt' | 'id'> {
+  image?: string;
+  displayName: string;
+  connectedMembers: IConnectedMember[];
+  createdBy: IConnectedMember;
+}
+
 export interface IRoomMembership extends IEntity {
   isBanned: boolean;
   pending: boolean;

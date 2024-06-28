@@ -1,4 +1,4 @@
-import { ConnectionStatus, ILoginRequest, ISignupRequest } from "@chattr/interfaces";
+import { ConnectionStatus, ILoginRequest, ISignupRequest, InviteInfo } from "@chattr/interfaces";
 import { MediaKind, RtpCapabilities, RtpParameters } from "mediasoup-client/lib/RtpParameters";
 import { DtlsParameters } from "mediasoup-client/lib/Transport";
 import { MediaDevice } from "../services/room.service";
@@ -170,7 +170,17 @@ export class CreateInviteLink {
   constructor(readonly redirectPath: string, readonly key: string) { }
 }
 
-export class InviteLinkCreated {
-  static type = '[Room] Invite link created';
-  constructor(readonly link: string) { }
+export class LoadInvitationInfo {
+  static type = `[Room] Load Invitation Info`;
+  constructor(readonly code: string) { }
+}
+
+export class InvitationInfoLoaded {
+  static type = '[Room] Invitation Info Loaded';
+  constructor(readonly info: InviteInfo) { }
+}
+
+export class UpdateInvite {
+  static type = '[Room] Update Invite'
+  constructor(readonly accepted: boolean, readonly code: string) { }
 }

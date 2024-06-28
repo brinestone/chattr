@@ -2,6 +2,9 @@
   <div>
     @if (isSignedIn()) {
     <p-menubar>
+      <ng-template pTemplate="start">
+        <h2>{{ principal()?.displayName }}</h2>
+      </ng-template>
       <ng-template pTemplate="end">
         <p-button (onClick)="onSignOutButtonClicked()" label="Sign out" [outlined]="true" icon="pi pi-lock-open"
           size="small" />

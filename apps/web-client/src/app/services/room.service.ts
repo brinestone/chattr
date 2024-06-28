@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { ICreateRoomInviteRequest, IRoom, IRoomSession, Signaling } from '@chattr/interfaces';
+import { ICreateRoomInviteRequest, IRoom, IRoomSession, IUpdateInviteRequest, InviteInfo, Signaling } from '@chattr/interfaces';
 import { Store } from '@ngxs/store';
 import {
   DtlsParameters,
@@ -8,6 +8,7 @@ import {
   RtpParameters
 } from 'mediasoup-client/lib/types';
 import {
+  EMPTY,
   catchError
 } from 'rxjs';
 import { Socket, io } from 'socket.io-client';
@@ -35,6 +36,19 @@ export class RoomService {
   private readonly store = inject(Store);
   private socket?: Socket;
   private socketInit = false;
+
+  updateInvite(code: string, accept: boolean) {
+    const body: IUpdateInviteRequest = { code, accept };
+    return this.httpClient.put(`${environment.backendOrigin}/invites`, body).pipe(
+      catchError(parseHttpClientError)
+    );
+  }
+
+  getInvitationInfo(code: string) {
+    return this.httpClient.get<InviteInfo>(`${environment.backendOrigin}/invites/${code}`).pipe(
+      catchError(parseHttpClientError)
+    );
+  }
 
   createInviteLink(redirect: string, roomId: string, key: string) {
     const request: ICreateRoomInviteRequest = {

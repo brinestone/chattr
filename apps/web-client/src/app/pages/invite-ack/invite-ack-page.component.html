@@ -1,2 +1,54 @@
-<h2>Room Invitation</h2>
-<p>You been invited to </p>
+<div class="space-y-3" #root>
+    <div class="">
+        @defer(on viewport(root); when !inviteInfo()) {
+        <p-card>
+            <div class="w-full flex items-center gap-4 flex-col">
+                <h1 class="text-slate-700 text-center">Room Invitation</h1>
+                <div class="flex items-center gap-3">
+                    <p-avatar size="xlarge" [label]="inviteInfo()?.image ? undefined :inviteInitial()"
+                        [image]="inviteInfo()?.image" shape="circle" />
+                    <i class="pi pi-plus"></i>
+                    <p-avatar size="xlarge" [label]="principal()?.avatar ? undefined : userInitials()"
+                        [image]="principal()?.avatar" shape="circle" />
+                </div>
+                <h3 class="text-slate-700 line-clamp-1 text-ellipsis">{{ inviteInfo()?.displayName }}</h3>
+                <p class="text-center">
+                    <strong>{{inviteInfo()?.createdBy?.displayName}}</strong> invites you to join
+                    <strong>{{inviteInfo()?.displayName}}</strong>
+                </p>
+                @if(connectedMembers().length > 0) {
+                <p-divider />
+                <p>You'll be joining these members live</p>
+                <p-avatarGroup>
+                    @for(connectedMember of connectedMembers()|slice:0:6;track connectedMember) {
+                    <p-avatar [label]="connectedMember.avatar ? undefined :connectedMember.displayName"
+                        [image]="connectedMember.avatar" shape="circle" />
+                    }
+                    @if(connectedMembers().length > 6) {
+                    <p-avatar class="bg-[var(--primary-color)]" label="+{{connectedMembers().length - 6}}"
+                        shape="circle" />
+                    }
+                </p-avatarGroup>
+                }
+                <p-divider />
+            </div>
+            <ng-template pTemplate="footer">
+                <div class="flex items-center justify-center gap-3">
+                    @if(!updatingInvite()) {
+                    <p-button (onClick)="onDeclineButtonClicked()" [outlined]="true" label="Decline"
+                        severity="secondary" />
+                    <p-button (onClick)="onAcceptButtonClicked()" label="Accept" severity="primary" />
+                    }@else {
+                    <p-progressSpinner animationDuration=".5" styleClass="w-[2.5rem] h-[2.5rem]" strokeWidth="4" />
+                    }
+                </div>
+            </ng-template>
+        </p-card>
+        }@placeholder (minimum 5s) {
+        <div class="flex gap-3 items-center justify-center">
+            <p-progressSpinner animationDuration=".5" styleClass="w-[2.5rem] h-[2.5rem]" strokeWidth="4" />
+            <span class="text-slate-500 text-2xl">Retreiving invitation info...</span>
+        </div>
+        }
+    </div>
+</div>

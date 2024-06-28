@@ -21,10 +21,11 @@ export class AuthService {
     }
 
     async loginUser(user: User) {
-        const { email, id, name } = user;
+        const { email, id, name, avatar } = user;
         const token = await this.jwtService.signAsync({
             username: email,
             displayName: name,
+            avatar,
             sub: id
         });
 

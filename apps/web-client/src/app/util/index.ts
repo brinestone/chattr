@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from "@angular/common/http";
 import { ActionCompletion, ActionType, Actions, ofActionCompleted, ofActionDispatched } from "@ngxs/store";
 import { Message } from "primeng/api";
-import { Observable, ObservableInput, identity, map, merge, mergeMap, throwError } from "rxjs";
+import { ObservableInput, identity, map, merge, mergeMap, throwError } from "rxjs";
 
 export function monitorAction<TOutput, TAction = ActionType>(actions$: Actions, actionType: ActionType, dispatchMapper?: (action: TAction) => TOutput, completionMapper?: (completion: ActionCompletion<TAction>) => TOutput | ActionCompletion<TAction>) {
     return merge([
@@ -20,8 +20,8 @@ export function monitorAction<TOutput, TAction = ActionType>(actions$: Actions, 
 }
 
 
-export function errorToMessage(error: Error) {
-    return { severity: 'error', summary: 'Error', detail: error.message } as Message;
+export function errorToMessage(error: Error, life?: number) {
+    return { severity: 'error', summary: 'Error', detail: error.message, life } as Message;
 }
 
 export function parseHttpClientError(error: Error): ObservableInput<never> {

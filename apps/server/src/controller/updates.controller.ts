@@ -10,6 +10,13 @@ import { UpdateInviteRequest } from "@chattr/dto";
 export class InvitesController {
     constructor(private updateService: UpdatesService) { }
 
+    @Get(':code')
+    async getInviteInfo(
+        @Param('code') code: string
+    ) {
+        return this.updateService.getInvitationInfo(code);
+    }
+
     @Put()
     async updateInvite(
         @Body(new ValidationPipe({ transform: true })) request: UpdateInviteRequest,

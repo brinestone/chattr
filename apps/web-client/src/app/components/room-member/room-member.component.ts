@@ -12,6 +12,7 @@ import { filter, take } from 'rxjs';
 import { CloseServerSideConsumer, CloseServerSideProducer, ConnectTransport, CreateServerSideConsumer, CreateServerSideProducer, JoinSession, LeaveSession, RemoteProducerClosed, RemoteProducerOpened, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, ToggleConsumerStream, TransportConnected, UpdateConnectionStatus } from '../../actions';
 import { Selectors } from '../../state/selectors';
 
+const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').substring(1);
 @Component({
   selector: 'chattr-room-member',
   standalone: true,
@@ -51,7 +52,6 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
   readonly avatar = computed(() => {
     const { displayName, avatar } = this.session();
     if (avatar) return avatar;
-    const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').substring(1);
     const defaultUrl = `https://api.dicebear.com/9.x/open-peeps/svg?seed=${encodeURIComponent(displayName)}&scale=80&size=100&backgroundColor=${bgColor}&backgroundType=gradientLinear`;
     return defaultUrl;
   });

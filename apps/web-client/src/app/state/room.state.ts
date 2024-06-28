@@ -2,8 +2,8 @@ import { Injectable, inject } from '@angular/core';
 import { ConnectionStatus, IRoom, IRoomSession } from '@chattr/interfaces';
 import { Action, NgxsOnInit, State, StateContext, select } from '@ngxs/store';
 import { append, patch, removeItem } from '@ngxs/store/operators';
-import { EMPTY, concatMap, forkJoin, from, of, switchMap, tap, throwError } from 'rxjs';
-import { ClearConnectedRoom, CloseServerSideConsumer, CloseServerSideProducer, ConnectToRoom, ConnectTransport, ConnectedRoomChanged, CreateInviteLink, CreateRoom, CreateServerSideConsumer, CreateServerSideProducer, JoinSession, LeaveSession, LoadRooms, RemoteSessionClosed, RemoteSessionOpened, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, TransportConnected, UpdateConnectionStatus } from '../actions';
+import { EMPTY, concatMap, forkJoin, from, of, switchMap, tap, throwError, timer } from 'rxjs';
+import { ClearConnectedRoom, CloseServerSideConsumer, CloseServerSideProducer, ConnectToRoom, ConnectTransport, ConnectedRoomChanged, CreateInviteLink, CreateRoom, CreateServerSideConsumer, CreateServerSideProducer, InvitationInfoLoaded, JoinSession, LeaveSession, LoadInvitationInfo, LoadRooms, RemoteSessionClosed, RemoteSessionOpened, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, TransportConnected, UpdateConnectionStatus, UpdateInvite } from '../actions';
 import { RoomService } from '../services/room.service';
 import { Selectors } from './selectors';
 
@@ -36,6 +36,18 @@ export class RoomState implements NgxsOnInit {
 
   ngxsOnInit(ctx: Context): void {
     ctx.dispatch(ClearConnectedRoom);
+  }
+
+  @Action(UpdateInvite, { cancelUncompleted: true })
+  onUpdateInvite(_: Context, { accepted, code }: UpdateInvite) {
+    return this.roomService.updateInvite(code, accepted);
+  }
+
+  @Action(LoadInvitationInfo, { cancelUncompleted: true })
+  onLoadInvitationInfo(ctx: Context, { code }: LoadInvitationInfo) {
+    return this.roomService.getInvitationInfo(code).pipe(
+      tap(res => ctx.dispatch(new InvitationInfoLoaded(res)))
+    );
   }
 
   @Action(CreateInviteLink, { cancelUncompleted: true })

@@ -54,7 +54,6 @@ export class AuthComponent {
         this.messageService.add(errorToMessage(error));
       },
       complete: () => {
-        console.log('here');
         this.signedIn.emit();
       }
     })

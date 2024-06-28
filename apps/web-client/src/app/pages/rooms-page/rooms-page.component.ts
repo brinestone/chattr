@@ -57,6 +57,7 @@ export class RoomsPageComponent {
   private readonly actions = inject(Actions);
   private readonly messageService = inject(MessageService);
   private readonly routeParams = toSignal(inject(ActivatedRoute).queryParams);
+  readonly principal = select(Selectors.principal);
   readonly redirect = computed(() => {
     const continueTo = this.routeParams()?.['continue'];
     if (!continueTo) return undefined;

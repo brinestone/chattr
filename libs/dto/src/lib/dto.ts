@@ -1,22 +1,25 @@
-import { ICreateRoomInviteRequest, IInvite, ILoginRequest, ISignupRequest, IUpdateInviteRequest } from "@chattr/interfaces";
+import { IConnectedMember, ICreateRoomInviteRequest, InviteInfo as IInviteInfo, ILoginRequest, ISignupRequest, IUpdateInviteRequest } from "@chattr/interfaces";
+import { Type } from 'class-transformer';
 import { IsBoolean, IsEmail, IsMongoId, IsNotEmpty, IsOptional, IsString, IsStrongPassword, IsUrl } from 'class-validator';
 
-export class ConnectedMemberDto {
-  displayName?: string;
+export class ConnectedMemberDto implements IConnectedMember {
+  displayName!: string;
   avatar?: string;
   constructor(data?: Partial<ConnectedMemberDto>) {
     if (data) Object.assign(this, data);
   }
 }
 
-export class InviteDto implements Pick<IInvite, 'roomId' | 'createdAt' | 'id'> {
+export class InviteDto implements IInviteInfo {
   roomId!: string;
   createdAt!: Date;
   id!: string;
   displayName!: string;
-  image!: string;
+  image?: string;
+  @Type(() => ConnectedMemberDto)
   connectedMembers: ConnectedMemberDto[] = [];
-  invitor!: ConnectedMemberDto;
+  @Type(() => ConnectedMemberDto)
+  createdBy!: ConnectedMemberDto;
   constructor(data?: Partial<InviteDto>) {
     if (data) Object.assign(this, data);
   }
