@@ -137,7 +137,7 @@ export class RoomService {
 
       this.socket.on('connect', () => {
         this.store.dispatch(new UpdateConnectionStatus('connected'));
-        this.subscribeToMessages
+        this.subscribeToMessages();
       });
 
       this.socket.on('reconnect', () => {
