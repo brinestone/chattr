@@ -1,7 +1,8 @@
 import { ICreateRoomInviteRequest, IRoomMembership, RoomMemberRole } from '@chattr/interfaces';
-import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, PreconditionFailedException, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, PreconditionFailedException, UnprocessableEntityException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash } from 'crypto';
+import EventEmitter from 'events';
 import { createWorker } from 'mediasoup';
 import {
   Consumer,
@@ -14,7 +15,7 @@ import {
   RtpParameters,
   WebRtcServer,
   WebRtcTransport,
-  Worker,
+  Worker
 } from 'mediasoup/node/lib/types';
 import { HydratedDocument, Model, Types } from 'mongoose';
 import { cpus, networkInterfaces } from 'os';
@@ -29,12 +30,10 @@ import {
   of,
   take
 } from 'rxjs';
+import { Events } from '../events';
 import { Room, RoomMembership, RoomSession, User } from '../models';
 import { InvitationEventData, UpdatesService } from './updates.service';
 import { UserService } from './user.service';
-import { Events } from '../events';
-import EventEmitter from 'events';
-import { plainToInstance } from 'class-transformer';
 
 const ONE_HOUR = 3_600_000;
 
@@ -95,7 +94,47 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     return this.workers[++this.nextWorkerIndex % this.workers.length];
   }
 
-  async isMemberInRoles(userId: string, roomId: string, roles: RoomMemberRole[]) {
+  async leaveSessions(userId: string, ...sessionIds: string[]) {
+    if (sessionIds.length == 0) return;
+    this.logger.verbose(`User: ${userId} is leaving sessions: ${sessionIds}...`);
+    const now = new Date();
+
+    for (const sessionId of sessionIds) {
+      const transportId = computeTransportId(userId, sessionId);
+      const transport = this.webRtcTransports[transportId];
+      transport?.close();
+      delete this.webRtcTransports[transportId];
+
+      const sessionDoc = await this.sessionModel.findById(sessionId);
+      if (!sessionDoc) {
+        this.logger.warn(`Could not find session: ${sessionId} while attempting to leave with user: ${userId}`);
+        continue;
+      }
+
+      sessionDoc.updateOne({
+        $inc: { __v: 1 },
+        $set: {
+          producers: [],
+          connected: false,
+          endDate: now
+        }
+      }).exec();
+    }
+  }
+
+  async toggleConsumer(consumerId: string) {
+    const consumer = this.consumers[consumerId];
+    if (!consumer) throw new NotFoundException('Consumer not found');
+    this.logger.debug(`Consumer State before toggling: paused = ${consumer.paused}`);
+    if (consumer.paused) await consumer.resume();
+    await consumer.pause();
+    this.logger.debug(`Consumer State after toggling: paused = ${consumer.paused}`);
+
+    const ans = { paused: consumer.paused };
+    return ans;
+  }
+
+  async isMemberInRoles(userId: string, roomId: string, ...roles: RoomMemberRole[]) {
     const member = await this.memberModel.exists({
       userId,
       roomId,
@@ -196,12 +235,9 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const sessionDoc = await this.sessionModel.findById(id);
     const memberDoc = await this.memberModel.findById(sessionDoc.member);
     const transportId = computeTransportId(sessionDoc.userId, id);
-    const router = this.routers[memberDoc.roomId];
-    if (router) {
-      router.close();
-      delete this.routers[memberDoc.roomId];
-      delete this.webRtcTransports[transportId];
-    }
+    const transport = this.webRtcTransports[transportId];
+    transport?.close();
+    delete this.webRtcTransports[transportId];
     await sessionDoc.updateOne({
       $inc: { __v: 1 },
       $set: {
@@ -223,14 +259,12 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const session = await this.sessionModel.findById(sessionId);
     const member = await this.memberModel.findById(session.member);
     const roomId = member.roomId;
-    const router = this.routers[roomId];
-
+    const router = this.routers[roomId.toString()];
     if (!router.canConsume({ producerId, rtpCapabilities })) throw new UnprocessableEntityException('The producer media cannot be consumed');
 
-    const consumer = await transport.consume({ producerId, rtpCapabilities, paused: true });
+    const consumer = await transport.consume({ producerId, rtpCapabilities/* , paused: true */ });
     this.consumers[consumer.id] = consumer;
-
-    return { rtpParameters: consumer.rtpParameters, kind: consumer.kind, id: consumer.id };
+    return { rtpParameters: consumer.rtpParameters, kind: consumer.kind, id: consumer.id, type: consumer.type };
   }
 
   async findConnectableSessionsFor(roomId: string, userId: string) {
@@ -240,22 +274,19 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const roomDoc = await this.model.findById(roomId).exec();
 
     if (!membership || !roomDoc) throw new NotFoundException('Room not found');
-    if (membership.isBanned) throw new ForbiddenException('You are not permitted to join access this room');
+    if (membership.isBanned || membership.pending) throw new ForbiddenException('You are not permitted to access this room');
 
     const otherMembers = await this.memberModel.find({
       roomId,
       userId: { $ne: userId },
       activeSession: { $ne: null }
-    })
-      .exec();
-
-    const sessions = await this.sessionModel.find({
-      _id: { $in: otherMembers.map(m => m.activeSession) },
-      connected: true,
-      serverIp: ip
     }).exec();
 
-    return sessions.filter(sessionDoc => {
+    const sessions = await this.sessionModel.find({
+      _id: { $in: otherMembers.map(m => m.activeSession) }
+    }).exec();
+
+    const ans = sessions.filter(sessionDoc => {
       const sessionTransportId = computeTransportId(sessionDoc.userId, sessionDoc._id.toString());
       const sessionTransport = this.webRtcTransports[sessionTransportId];
       if (sessionTransport?.closed === false) return true;
@@ -273,6 +304,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
       return false;
     })
       .map(doc => new RoomSession(doc.toObject()));
+    return ans;
   }
 
   async findRoomWithSubscriber(userId: string, roomId: string) {
@@ -407,8 +439,10 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
                 );
 
                 producer.observer.on('close', () => {
-                  this.logger.verbose(`Producer::${producer.id} closed on transport::${transport.id}`)
-                })
+                  this.logger.verbose(`Producer::${producer.id} closed on transport::${transport.id}`);
+                  delete this.producers[producer.id];
+                });
+
               });
 
               transport.observer.on('newconsumer', (consumer) => {
@@ -418,6 +452,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
 
                 consumer.observer.on('close', () => {
                   this.logger.verbose(`Consumer::${consumer.id} closed on transport::${transport.id}`);
+                  delete this.consumers[consumer.id];
                 })
               });
             });
@@ -556,14 +591,13 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
       userId,
       roomId
     }).exec();
-
     return membership != null;
   }
 
-  async isSessionOwner(sessionId: string, userId: string) {
+  async isSessionOwner(session: string | HydratedDocument<RoomSession>, userId: string) {
     return await this.sessionModel.exists({
-      userId, _id: new Types.ObjectId(sessionId)
-    }).exec().then(doc => !!doc);
+      userId, _id: typeof session == 'string' ? new Types.ObjectId(session) : session._id
+    }).exec().then(doc => doc != null);
   }
 
   async joinSession(sessionId: string, roomId: string, userId: string) {
@@ -571,16 +605,18 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const isMember = await this.isUserARoomMember(userId, roomId);
     if (!isMember) throw new ForbiddenException('You are not permitted to access this room');
 
-    const isSessionOwner = this.isSessionOwner(sessionId, userId);
+    const isSessionOwner = await this.isSessionOwner(sessionId, userId);
     const hasElevatedPrivileges = await this.userHasElevatedPrivileges(userId);
 
     const transportId = computeTransportId(userId, sessionId);
-    const { iceParameters, iceCandidates, dtlsParameters, id } = await this.assertWebRtcTransport(roomId, transportId);
+    const [router, { iceParameters, iceCandidates, dtlsParameters, id }] = await this.assertWebRtcTransport(roomId, transportId);
+    if (!router) throw new InternalServerErrorException('Unknown Error');
     const rtpCapabilities = this.routers[roomId].rtpCapabilities;
     await this.sessionModel.findByIdAndUpdate(sessionId, {
       $set: {
         serverIp: ip,
-        connected: true
+        connected: true,
+        endDate: null
       }
     }).exec();
 
@@ -623,7 +659,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
   async connectTransport(sessionId: string, dtlsParameters: DtlsParameters, userId: string) {
     const transportId = computeTransportId(userId, sessionId);
     const transport = this.webRtcTransports[transportId];
-    if (!transport) throw new NotFoundException('No such transport exists: ' + transportId)
+    if (!transport) throw new NotFoundException('No such transport exists: ' + transportId);
     return await transport.connect({ dtlsParameters })
       .then(() => this.logger.verbose(`User: ${userId} has connected their WebRTC transport::${transport.id} on session: ${sessionId}`));
   }
@@ -640,13 +676,20 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
 
     const staleDate = new Date(Date.now() - ONE_HOUR);
     let sessionDoc = await this.sessionModel.findOne({
-      clientIp,
-      serverIp: ip,
-      userId,
-      member: memberDoc,
-      updatedAt: {
-        $gte: staleDate
-      }
+      $or: [
+        {
+          clientIp,
+          serverIp: ip,
+          userId,
+          member: memberDoc,
+          updatedAt: {
+            $gte: staleDate
+          }
+        },
+        {
+          _id: memberDoc.activeSession
+        }
+      ]
     }).exec();
 
     if (!sessionDoc) {
@@ -678,12 +721,13 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     return session;
   }
 
-  private async assertWebRtcTransport(routerID: string, id: string) {
+  private async assertWebRtcTransport(routerID: string, id: string): Promise<[Router, WebRtcTransport]> {
     let transport = this.webRtcTransports[id];
+    let router = this.routers[routerID];
 
     if (!transport) {
-      const router = this.routers[routerID] ?? (await this.assertRouter(routerID));
-      const server = this.webRtcServers[router.appData.serverIndex as number];
+      router = this.routers[routerID] ?? (await this.assertRouter(routerID));
+      const server = this.webRtcServers[Number(router.appData.serverIndex)];
       transport = await router.createWebRtcTransport({
         webRtcServer: server,
         enableUdp: true,
@@ -691,18 +735,17 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
       this.webRtcTransports[id] = transport;
     }
 
-    return transport;
+    return [router, transport];
   }
 
   private async assertRouter(id: string) {
     let router = this.routers[id];
     if (!router) {
       const worker = this.nextWorker;
-      const _router = await worker.createRouter({
+      router = await worker.createRouter({
         mediaCodecs,
       });
-      _router.appData.serverIndex
-      router = this.routers[id] = _router;
+      this.routers[id] = router;
     }
     return router;
   }

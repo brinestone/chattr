@@ -5,15 +5,15 @@ import { Store } from '@ngxs/store';
 import {
   DtlsParameters,
   MediaKind,
+  RtpCapabilities,
   RtpParameters
 } from 'mediasoup-client/lib/types';
 import {
-  EMPTY,
   catchError
 } from 'rxjs';
 import { Socket, io } from 'socket.io-client';
 import { environment } from '../../environments/environment.development';
-import { RemoteProducerClosed, RemoteProducerOpened, RemoteSessionClosed, RemoteSessionOpened, ServerError, UpdateConnectionStatus } from '../actions';
+import { RemoteProducerClosed, RemoteProducerOpened, RemoteSessionClosed, RemoteSessionOpened, RoomError, UpdateConnectionStatus } from '../actions';
 import { parseHttpClientError } from '../util';
 
 export type RoomEvent<T = any> = {
@@ -36,6 +36,11 @@ export class RoomService {
   private readonly store = inject(Store);
   private socket?: Socket;
   private socketInit = false;
+
+  async toggleConsumer(consumerId: string) {
+    this.assertSocket();
+    return await this.socket!.emitWithAck(Signaling.ToggleConsumer, { consumerId });
+  }
 
   updateInvite(code: string, accept: boolean) {
     const body: IUpdateInviteRequest = { code, accept };
@@ -81,14 +86,14 @@ export class RoomService {
     return await this.socket!.emitWithAck(Signaling.ConnectTransport, { sessionId, dtlsParameters });
   }
 
-  async createConsumerFor(producerId: string, sessionId: string) {
+  async createConsumerFor(producerId: string, sessionId: string, rtpCapabilities: RtpCapabilities) {
     this.assertSocket();
-    return await this.socket!.emitWithAck(Signaling.CreateConsumer, { producerId, sessionId });
+    return await this.socket!.emitWithAck(Signaling.CreateConsumer, { producerId, sessionId, rtpCapabilities });
   }
 
-  async leaveSession(roomId: string, sessionId: string) {
+  async leaveSession(sessionId: string) {
     this.assertSocket();
-    this.socket!.emit(Signaling.LeaveSession, { roomId, sessionId });
+    this.socket!.emit(Signaling.LeaveSession, { sessionId });
   }
 
   findRoomSession(sessionId: string) {
@@ -125,7 +130,7 @@ export class RoomService {
     if (!this.socket) throw new Error('No connection has not been established with the server');
   }
 
-  establishConnection(authToken?: string) {
+  establishConnection(roomId: string, authToken?: string) {
     if (!this.socketInit) {
       this.socket = io(`${environment.backendOrigin}/`, {
         transports: ['websocket'],
@@ -136,6 +141,7 @@ export class RoomService {
       this.socketInit = true;
 
       this.socket.on('connect', () => {
+        console.log('Recovered?', this.socket?.recovered);
         this.store.dispatch(new UpdateConnectionStatus('connected'));
         this.subscribeToMessages();
       });
@@ -149,7 +155,7 @@ export class RoomService {
       });
 
       this.socket.on('errors', ({ errorMessage }: { errorMessage: string }) => {
-        this.store.dispatch(new ServerError(errorMessage));
+        this.store.dispatch(new RoomError(errorMessage, roomId));
       });
     } else if (!this.socket?.connected) {
       this.socket?.connect();

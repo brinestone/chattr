@@ -60,6 +60,7 @@ export interface IRoomMembership extends IEntity {
 export interface IRoom extends IEntity {
   name: string;
   members: string[];
+  image?: string;
 }
 
 export interface ILoginRequest {
@@ -112,5 +113,6 @@ export enum Signaling {
   CloseConsumer = 'CLOSE_CONSUMER',
   AdmissionPending = 'ADMISSION_PENDING',
   AdmissionApproved = 'ADMISSION_APPROVED',
-  ApproveAdmission = 'APPROVE_ADMISSION'
+  ApproveAdmission = 'APPROVE_ADMISSION',
+  ToggleConsumer = 'TOGGLE_CONSUMER'
 }

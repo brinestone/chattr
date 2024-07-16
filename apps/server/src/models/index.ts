@@ -141,6 +141,9 @@ export class Room extends BaseEntity implements IRoom {
   @Prop({ required: true })
   name: string;
 
+  @Prop()
+  image: string;
+
   constructor(data?: Partial<IRoom>) {
     super();
     if (data) Object.assign(this, data);

@@ -8,8 +8,8 @@ import { RtpCapabilities } from 'mediasoup-client/lib/RtpParameters';
 import { Transport } from 'mediasoup-client/lib/Transport';
 import { Producer } from 'mediasoup-client/lib/types';
 import { CardModule } from 'primeng/card';
-import { filter, take } from 'rxjs';
-import { CloseServerSideConsumer, CloseServerSideProducer, ConnectTransport, CreateServerSideConsumer, CreateServerSideProducer, JoinSession, LeaveSession, RemoteProducerClosed, RemoteProducerOpened, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, ToggleConsumerStream, TransportConnected, UpdateConnectionStatus } from '../../actions';
+import { filter, fromEvent, take, takeUntil } from 'rxjs';
+import { CloseServerSideConsumer, CloseServerSideProducer, ConnectTransport, ConsumerStreamToggled, CreateServerSideConsumer, CreateServerSideProducer, JoinSession, LeaveSession, RemoteProducerClosed, RemoteProducerOpened, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, ToggleConsumerStream, TransportConnected, UpdateConnectionStatus } from '../../actions';
 import { Selectors } from '../../state/selectors';
 
 const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').substring(1);
@@ -42,6 +42,11 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
   private videoProducer?: Producer;
   private audioProducer?: Producer;
   readonly sessionStream = signal<MediaStream | null>(null);
+  readonly videoTrackAvailable = computed(() => {
+    const stream = this.sessionStream();
+    if (!stream) return false;
+    return stream.getVideoTracks().length > 0;
+  })
   private readonly canPublish = computed(() => {
     const producibleSession = this.producibleSession();
     const session = this.session();
@@ -100,17 +105,16 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
       }
     });
 
-    // setTimeout(() => {
     this.actions$.pipe(
       takeUntilDestroyed(this.destroyRef),
       ofActionDispatched(UpdateConnectionStatus),
       filter(({ status }) => status == 'connected')
     ).subscribe(() => this.joinSessionFn(this.session().id));
-    // }, 20);
+    this.joinSessionFn(this.session().id);
   }
 
   private startConsuming() {
-    console.log('Consuming media on session: ' + this.session().id);
+    console.log('Started consuming media on session: ' + this.session().id);
     for (const producerId of this.session().producers) {
       this.consumeProducerMedia(producerId);
     }
@@ -131,7 +135,7 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
       take(1)
     ).subscribe(async ({ id, kind, rtpParameters }) => {
       if (!this.transport) return;
-      const consumer = await this.transport.consume({ id, kind, producerId, rtpParameters });
+      const consumer = await this.transport.consume({ id, kind, producerId, rtpParameters, });
       this.consumers.set(consumer.id, consumer);
 
       this.actions$.pipe(
@@ -143,6 +147,28 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
         consumer.close();
       });
 
+      const consumerStreamToggledCallback = ({ paused }: ConsumerStreamToggled) => {
+        const { track } = consumer;
+        this.sessionStream.update((currentStream) => {
+          const stream = currentStream ?? new MediaStream();
+          const tracks = kind == 'audio' ? stream.getAudioTracks() : stream.getVideoTracks();
+          tracks.forEach((track) => {
+            track.stop();
+            stream.removeTrack(track);
+          });
+          if (!paused)
+            stream.addTrack(track);
+          return stream;
+        });
+      }
+
+      this.actions$.pipe(
+        takeUntilDestroyed(this.destroyRef),
+        takeUntil(fromEvent(consumer.observer, 'close')),
+        ofActionDispatched(ConsumerStreamToggled),
+        filter(({ consumerId }) => consumerId == consumer.id)
+      ).subscribe(action => consumerStreamToggledCallback(action));
+
       consumer.observer.on('close', () => {
         const { track } = consumer;
         this.sessionStream.update((currentStream) => {
@@ -153,17 +179,12 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
 
         this.consumers.delete(consumer.id);
         this.closeConsumerFn(id);
-      })
-
-      this.consumerToggleFn(id);
-
-      const { track } = consumer;
-      this.sessionStream.update((currentStream) => {
-        const stream = currentStream ?? new MediaStream();
-        stream.addTrack(track);
-
-        return stream;
       });
+
+      // console.log(consumer.paused);
+      // this.consumerToggleFn(id);
+
+      consumerStreamToggledCallback({ paused: false, consumerId: id });
     });
 
     this.createServerConsumerFn(producerId, this.session().id, this.device.rtpCapabilities);
@@ -275,7 +296,8 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
           callback();
         }
       });
-
+      if (this.transport?.connectionState != 'new')
+        console.log(this.transport?.connectionState);
       this.transportConnectFn(this.session().id, dtlsParameters);
     });
   }

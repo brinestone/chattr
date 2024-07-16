@@ -1,5 +1,5 @@
 import { Injectable, inject } from "@angular/core";
-import { Action, NgxsOnInit, State, StateContext } from "@ngxs/store";
+import { Action, NgxsOnInit, State, StateContext, StateToken } from "@ngxs/store";
 import { append, patch } from "@ngxs/store/operators";
 import { EMPTY, Subscription, tap } from "rxjs";
 import { SignIn, SignOut, SignUp, UserSessionUpdated } from "../actions";
@@ -13,11 +13,13 @@ export type UserStateModel = {
     notifications: INotification[];
 }
 
+export const USER_STATE = new StateToken<UserStateModel>('user');
+
 type Context = StateContext<UserStateModel>;
 
 @Injectable()
 @State<UserStateModel>({
-    name: 'user',
+    name: USER_STATE,
     defaults: {
         isSignedIn: false,
         notifications: []

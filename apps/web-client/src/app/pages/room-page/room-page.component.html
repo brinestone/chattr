@@ -1,7 +1,8 @@
-<div [ngClass]="{
-  'grid-rows-2': sessions().length > 3 && sessions().length < 7,
-  'grid-rows-3': sessions().length > 6 && sessions().length < 10
-}" class="p-3 grid gap-2 grid-flow-col grid-cols-[repeat(auto-fit,minmax(300px,1fr))]">
+@defer (when initConnection) {
+<div [@sessions]="sessions()" [ngClass]="{
+    'grid-rows-2': sessions().length > 3 && sessions().length < 7,
+    'grid-rows-3': sessions().length > 6 && sessions().length < 10
+  }" class="p-3 grid gap-2 grid-flow-col grid-cols-[repeat(auto-fit,minmax(300px,1fr))]">
   @for(session of sessions()|slice:0:10; track session.id) {
   <chattr-room-member (errored)="onMemberSessionError($event)" class="h-full w-full" [session]="session" />
   }
@@ -13,9 +14,11 @@
     <p-divider layout="vertical" />
     <p-button (onClick)="showDevicesConfigSidebar = true" [severity]="devicesConfigured() ? undefined : 'danger'"
       tooltipPosition="top" pTooltip="Settings" icon="pi pi-cog" [outlined]="true" [rounded]="true" />
-    <p-button (onClick)="onToggleAudioButtonClicked()" tooltipPosition="top" pTooltip="Toggle Audio"
-      icon="pi pi-microphone" [outlined]="audioDisabled()" [rounded]="true" />
-    <p-button (onClick)="onToggleVideoButtonClicked()" tooltipPosition="top" pTooltip="Toggle Video" icon="pi pi-video"
+    <p-button [disabled]="!audioDeviceSet()" (onClick)="onToggleAudioButtonClicked()" tooltipPosition="top"
+      [pTooltip]="audioDeviceSet() ? 'Toggle Audio' : 'No mic configured'" icon="pi pi-microphone"
+      [outlined]="audioDisabled()" [rounded]="true" />
+    <p-button [disabled]="!videoDeviceSet()" (onClick)="onToggleVideoButtonClicked()" tooltipPosition="top"
+      [pTooltip]="videoDeviceSet() ? 'Toggle Video' : 'No camera configured'" icon="pi pi-video"
       [outlined]="videoDisabled()" [rounded]="true" />
     <p-button tooltipPosition="top" pTooltip="Present Screen" icon="pi pi-desktop" [outlined]="true" [rounded]="true" />
     <p-divider layout="vertical" />
@@ -79,3 +82,19 @@
   <p-progressSpinner styleClass="w-[2rem] h-[2rem]" strokeWidth="3" animationDuration=".5s" />
   }
 </p-dialog>
+
+}@placeholder {
+<div class="flex justify-center items-center">
+  <div class="flex gap-3 items-center justify-center">
+    <p-progressSpinner animationDuration=".5" styleClass="w-[2.5rem] h-[2.5rem]" strokeWidth="4" />
+    <span class="text-slate-500 text-2xl">Connecting...</span>
+  </div>
+</div>
+}
+@if(reconnecting() && initConnection) {
+<div [@fade]="reconnecting()"
+  class="bg-black absolute w-full h-full left-0 top-0 bg-opacity-80 text-white flex items-center justify-center">
+  <p-progressSpinner animationDuration=".5" styleClass="w-[2.5rem] h-[2.5rem]" strokeWidth="4" />
+  <span class="text-slate-500 text-3xl">Reconnecting...</span>
+</div>
+}

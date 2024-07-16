@@ -14,6 +14,6 @@ export class WsExceptionFilter implements ExceptionFilter {
   catch(exception: HttpException, host: ArgumentsHost) {
     const socket = host.switchToWs().getClient<Socket>();
     this.logger.error(exception.message, exception.stack);
-    socket.emit('errors', JSON.stringify({ errorMessage: exception.message }));
+    socket.emit('errors', { errorMessage: exception.message });
   }
 }

@@ -13,14 +13,9 @@ import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { filter, map, take } from 'rxjs';
 import { InvitationInfoLoaded, LoadInvitationInfo, UpdateInvite } from '../../actions';
 import { Selectors } from '../../state/selectors';
-import { errorToMessage } from '../../util';
+import { errorToMessage, extractInitials } from '../../util';
 // const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').substring(1);
-function extractInitials(text?: string) {
-  if (!text) return '';
-  const tokens = text.trim().toUpperCase().split(' ').map(x => x[0]);
-  if (!tokens) return '';
-  return [tokens[0], tokens[1]].join('');
-}
+
 
 @Component({
   selector: 'chattr-invite-ack-page',
@@ -66,7 +61,7 @@ export class InviteAckPageComponent implements AfterViewInit {
   });
   readonly connectedMembers = computed(() => {
     const invite = this.inviteInfo();
-    let ans = (invite?.connectedMembers && invite.connectedMembers.length > 0) ? invite.connectedMembers : [];
+    const ans = (invite?.connectedMembers && invite.connectedMembers.length > 0) ? invite.connectedMembers : [];
     return ans.map(({ displayName, avatar }) => ({ avatar, displayName: extractInitials(displayName) }));
   });
 

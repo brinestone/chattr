@@ -10,6 +10,11 @@ export class Selectors {
     private static roomSlices = createPropertySelectors<RoomStateModel>(RoomState);
     private static deviceSlices = createPropertySelectors<DeviceStateModel>(DeviceState);
 
+    @Selector([Selectors.roomSlices.connectedRoom])
+    static connectedRoomInfo(connectedRoom?: ConnectedRoom) {
+        return connectedRoom?.info;
+    }
+
     @Selector([Selectors.userSlices.accessToken])
     static principal(accessToken?: string) {
         if (!accessToken) return undefined;

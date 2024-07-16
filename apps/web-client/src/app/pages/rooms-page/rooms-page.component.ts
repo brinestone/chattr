@@ -16,18 +16,18 @@ import {
 } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Actions, dispatch, select } from '@ngxs/store';
-import { NgxJdenticonModule } from 'ngx-jdenticon';
 import { MessageService } from 'primeng/api';
-import { AutoCompleteModule } from 'primeng/autocomplete';
+import { AvatarModule } from 'primeng/avatar';
 import { ButtonModule } from 'primeng/button';
+import { DataViewModule } from 'primeng/dataview';
 import { DialogModule } from 'primeng/dialog';
-import { GalleriaModule } from 'primeng/galleria';
+import { DividerModule } from 'primeng/divider';
 import { InputTextModule } from 'primeng/inputtext';
-import { MenubarModule } from 'primeng/menubar';
 import { CreateRoom, LoadRooms, SignOut } from '../../actions';
 import { AuthComponent } from '../../auth/auth.component';
 import { Selectors } from '../../state/selectors';
-import { errorToMessage, monitorAction } from '../../util';
+import { errorToMessage, extractInitials, monitorAction } from '../../util';
+import { TagModule } from 'primeng/tag';
 
 @Component({
   selector: 'chattr-rooms-page',
@@ -35,16 +35,16 @@ import { errorToMessage, monitorAction } from '../../util';
   imports: [
     CommonModule,
     RouterLink,
-    GalleriaModule,
-    NgxJdenticonModule,
+    TagModule,
+    DataViewModule,
     ButtonModule,
+    DividerModule,
     DialogModule,
+    AvatarModule,
     InputTextModule,
     FormsModule,
     ReactiveFormsModule,
     AuthComponent,
-    AutoCompleteModule,
-    MenubarModule,
   ],
   templateUrl: './rooms-page.component.html',
   styleUrl: './rooms-page.component.scss',
@@ -75,6 +75,7 @@ export class RoomsPageComponent {
   readonly openNewRoomDialog = signal(false);
   readonly isSignedIn = select(Selectors.isSignedIn);
   readonly openAuthDialog = computed(() => !this.isSignedIn());
+  readonly extractInitials = extractInitials;
 
   constructor() {
     effect(() => {

@@ -11,16 +11,16 @@ import {
   WsException
 } from '@nestjs/websockets';
 import { DtlsParameters, MediaKind, RtpCapabilities, RtpParameters } from 'mediasoup/node/lib/types';
+import { fromEvent } from 'rxjs';
 import { Server, Socket } from 'socket.io';
 import { Ctx } from '../decorators/extract-from-context.decorator';
+import { Roles } from '../decorators/room-role';
+import { Events } from '../events';
 import { WsExceptionFilter } from '../filters/ws-exception.filter';
+import { RoleGuard } from '../guards/role.guard';
 import { WsGuard } from '../guards/ws.guard';
 import { Principal } from '../models';
 import { RoomService } from '../services/room.service';
-import { fromEvent } from 'rxjs';
-import { Events } from '../events';
-import { RoleGuard } from '../guards/role.guard';
-import { Roles } from '../decorators/room-role';
 
 function getElevatedChannel(roomId: string) {
   return `elevated::${roomId}`;
@@ -42,10 +42,16 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnA
     const roomId = client.data.roomId;
     if (roomId) {
       const owningSession = client.data['owningSession'];
+      const userId: string = client.data['userId'];
       await this.roomService.closeSession(owningSession);
-      // await this.roomService.leaveSessions(roomId, client.data['sessions']);
+      await this.roomService.leaveSessions(userId, ...(client.data['sessions'] ?? []));
       client.to(roomId).emit(Signaling.SessionClosed, { sessionId: owningSession });
       client.leave(roomId);
+
+      if (this.roomService.isMemberInRoles(userId, roomId, 'moderator', 'owner')) {
+        const elevatedChannel = getElevatedChannel(roomId);
+        client.leave(elevatedChannel);
+      }
     }
     this.logger.log(`${client.id} has disconnected.`);
   }
@@ -55,6 +61,30 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnA
       const elevatedChannel = getElevatedChannel(roomId);
       this.server.to(elevatedChannel).emit(Signaling.AdmissionPending, { userId, displayName, avatar, roomId, memberId, clientIp });
     })
+  }
+
+  @SubscribeMessage(Signaling.LeaveSession)
+  async handleSessionLeave(
+    @ConnectedSocket() socket: Socket,
+    @Ctx('user') { userId }: Principal,
+    @MessageBody() { sessionId }: { sessionId: string }
+  ) {
+    try {
+      await this.roomService.leaveSessions(userId, sessionId);
+    } catch (err) {
+      this.logger.error(err.message, err.stack);
+    }
+  }
+
+  @SubscribeMessage(Signaling.ToggleConsumer)
+  async handleConsumerToggling(
+    @MessageBody() { consumerId }: { consumerId: string }
+  ) {
+    try {
+      return await this.roomService.toggleConsumer(consumerId);
+    } catch (err) {
+      this.logger.error(err.message, err.stack);
+    }
   }
 
   @SubscribeMessage(Signaling.ApproveAdmission)
@@ -83,7 +113,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnA
     try {
       this.roomService.closeConsumer(consumerId);
     } catch (err) {
-      this.logger.warn(err.message);
+      this.logger.error(err.message, err.stack);
     }
   }
 
@@ -133,8 +163,11 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnA
         socket.join(getElevatedChannel(roomId));
       socket.join(roomId);
       socket.data['roomId'] = roomId;
-      if (!isSessionOwner)
-        socket.data['sessions'] = [...(socket.data['sessions'] ?? []), sessionId];
+      if (!isSessionOwner) {
+        const sessions = new Set<string>(socket.data['sessions'] ?? []);
+        sessions.add(sessionId);
+        socket.data['sessions'] = [...sessions];
+      }
       socket.data['userId'] = principal.userId;
 
       if (isSessionOwner) {

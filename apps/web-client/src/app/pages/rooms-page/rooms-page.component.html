@@ -1,52 +1,52 @@
-<div class="container mx-auto py-4 h-full">
-  <div>
-    @if (isSignedIn()) {
-    <p-menubar>
-      <ng-template pTemplate="start">
-        <h2>{{ principal()?.displayName }}</h2>
-      </ng-template>
-      <ng-template pTemplate="end">
-        <p-button (onClick)="onSignOutButtonClicked()" label="Sign out" [outlined]="true" icon="pi pi-lock-open"
-          size="small" />
-      </ng-template>
-    </p-menubar>
-    }
-  </div>
-  <div class="flex flex-col justify-center items-center gap-4 h-full w-full">
-    <h1 class="text-gray-700 text-2lg m-0">Your Rooms</h1>
-
-    <div class="container mx-auto space-y-3">
+<div class="py-1 h-full">
+  <div class="h-full w-full">
+    <div class="space-y-3">
       @if(isSignedIn()) {
-      <p-galleria [value]="rooms()" [circular]="true" [responsiveOptions]="[
-    {
-        breakpoint: '1024px',
-        numVisible: 5
-    },
-    {
-        breakpoint: '768px',
-        numVisible: 3
-    },
-    {
-        breakpoint: '560px',
-        numVisible: 1
-    }
-]">
-        <ng-template pTemplate="item" let-room>
-          <a routerLink="/rooms/{{room.id}}"
-            class="w-[15rem] text-current no-underline visited:text-current bg-gray-200 hover:bg-gray-700 hover:shadow-md hover:text-white transition-colors m-2 rounded-md p-3 flex flex-col items-center justify-center gap-3">
-            <svg class="rounded-full" width="100" height="100" [data-jdenticon-value]="room.id"></svg>
-            <h2 class="text-ellipsis line-clamp-1">{{ room.name }}</h2>
-          </a>
-        </ng-template>
-        <ng-template pTemplate="thumbnail" let-room>
-          <div class="bg-gray-400 w-[5rem] flex justify-center items-center py-4">
-            <svg class="rounded-full border" width="30" height="30" [data-jdenticon-value]="room.id"></svg>
+      <p-dataView layout="list" [value]="rooms()">
+        <ng-template pTemplate="header">
+          <div class="flex justify-between items-center">
+            <h3 class="text-gray-700 text-2lg m-0">Your Rooms</h3>
+            <div class="flex gap-3 items-center">
+              <p-button (onClick)="onSignOutButtonClicked()" label="Sign out" [outlined]="true" icon="pi pi-lock-open"
+                size="small" />
+              <p-button size="small" (onClick)="openNewRoomDialog.set(true)" label="Create Room" icon="pi pi-plus" />
+            </div>
           </div>
         </ng-template>
-      </p-galleria>
-      <div class="w-full flex justify-center">
-        <p-button (onClick)="openNewRoomDialog.set(true)" label="Add a Space" icon="pi pi-plus" />
-      </div>
+        <ng-template let-rooms pTemplate="list">
+          <div>
+            @for (room of rooms; track room.id) {
+            <ng-container>
+              <div class="flex items-center justify-between p-3">
+                <div class="flex gap-3 items-center">
+                  <p-avatar size="large" [label]="extractInitials(room.name)" shape="circle" />
+                  <div class="space-y-2">
+                    <h4><a [routerLink]="room.id">{{ room.name }}</a></h4>
+                    <p>
+                      @if(room.members.length == 1) {
+                      You are the only member
+                      } @else {
+                      You and {{ (room.members.length-1) | number }} other member{{(room.members.length-1) == 1 ? '' :
+                      's'}}
+                      }
+                    </p>
+                  </div>
+                </div>
+                <div class="space-y-2">
+                  <div>
+                    <p-tag severity="success">live</p-tag>
+                  </div>
+                  <div>
+                    <p-button [routerLink]="room.id" label="Join" size="small" />
+                  </div>
+                </div>
+              </div>
+              <p-divider />
+            </ng-container>
+            }
+          </div>
+        </ng-template>
+      </p-dataView>
       }
     </div>
   </div>

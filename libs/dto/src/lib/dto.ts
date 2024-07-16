@@ -54,10 +54,10 @@ export class SignUpRequest implements ISignupRequest {
 }
 
 export class UserDto implements Pick<UserDto, 'email' | 'name' | 'id' | 'avatar'> {
-  email: string = '';
+  email = '';
   avatar?: string | undefined;
-  name: string = '';
-  id: string = '';
+  name = '';
+  id = '';
 
   constructor(data?: Partial<UserDto>) {
     if (data) {

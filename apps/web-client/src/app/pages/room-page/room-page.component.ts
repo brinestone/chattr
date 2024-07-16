@@ -1,16 +1,17 @@
+import { state, style, trigger, transition, animate, query } from '@angular/animations';
 import { NgClass, NgStyle, SlicePipe } from '@angular/common';
 import {
   Component,
-  OnInit,
   computed,
   effect,
   inject,
   signal
 } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Actions, dispatch, ofActionDispatched, select } from '@ngxs/store';
+import { Actions, dispatch, ofActionDispatched, ofActionErrored, select } from '@ngxs/store';
 import { MessageService } from 'primeng/api';
 import { BadgeModule } from 'primeng/badge';
 import { ButtonModule } from 'primeng/button';
@@ -21,11 +22,12 @@ import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { SidebarModule } from 'primeng/sidebar';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { EMPTY, map, switchMap, take } from 'rxjs';
-import { ConnectToRoom, CreateInviteLink, DevicesFound, FindDevices, SetAudioDevice, SetVideoDevice, ToggleAudio, ToggleVideo } from '../../actions';
+import { EMPTY, filter, map, switchMap, take } from 'rxjs';
+import { ConnectToRoom, CreateInviteLink, DevicesFound, FindDevices, RoomError, SetAudioDevice, SetVideoDevice, ToggleAudio, ToggleVideo, UpdateConnectionStatus } from '../../actions';
 import { RoomMemberComponent } from '../../components/room-member/room-member.component';
 import { Selectors } from '../../state/selectors';
 import { errorToMessage } from '../../util';
+import { MediaDevice } from '../../services/room.service';
 @Component({
   selector: 'chattr-room-page',
   standalone: true,
@@ -33,6 +35,7 @@ import { errorToMessage } from '../../util';
   imports: [
     TooltipModule,
     ButtonModule,
+    ProgressSpinnerModule,
     NgStyle,
     SlicePipe,
     DropdownModule,
@@ -48,8 +51,39 @@ import { errorToMessage } from '../../util';
   ],
   templateUrl: './room-page.component.html',
   styleUrl: './room-page.component.scss',
+  animations: [
+    trigger('fade', [
+      state('void', style({
+        opacity: 0
+      })),
+      transition('void => *', [
+        animate(500)
+      ]),
+      transition('* => void', [
+        animate(500)
+      ])
+    ]),
+    trigger('sessions', [
+      transition('* => *', [
+        query(':enter', [
+          style({
+            opacity: 0,
+            scale: .5
+          }),
+          animate('.5s linear', style({ opacity: 1, scale: 1 }))
+        ], { optional: true }),
+        query(':leave', [
+          style({
+            opacity: 1,
+            scale: 1
+          }),
+          animate('.5s linear', style({ opacity: 0, scale: .5 }))
+        ], { optional: true })
+      ])
+    ])
+  ]
 })
-export class RoomPageComponent implements OnInit {
+export class RoomPageComponent {
   private readonly roomConnectFn = dispatch(ConnectToRoom);
   private readonly loadDevicesFn = dispatch(FindDevices);
   private readonly setAudioDeviceFn = dispatch(SetAudioDevice);
@@ -57,8 +91,11 @@ export class RoomPageComponent implements OnInit {
   private readonly audioToggleFn = dispatch(ToggleAudio);
   private readonly setVideoDeviceFn = dispatch(SetVideoDevice);
   private readonly createInviteLinkFn = dispatch(CreateInviteLink);
-  private readonly roomId = inject(ActivatedRoute).snapshot.params['id'] as string;
+  private readonly roomId = toSignal(inject(ActivatedRoute).params.pipe(
+    map(params => params['id'] as string)
+  ))
   private readonly activatedRoute = inject(ActivatedRoute);
+  private readonly title = inject(Title);
   private readonly router = inject(Router);
   private readonly messageService = inject(MessageService);
   private readonly actions$ = inject(Actions);
@@ -66,11 +103,19 @@ export class RoomPageComponent implements OnInit {
   private readonly preferredVideoDevice = select(Selectors.videoInDevice);
   readonly gettingShareLink = signal(false);
   readonly shareLink = select(Selectors.inviteLink);
+  readonly roomInfo = select(Selectors.connectedRoomInfo);
   readonly videoDisabled = select(Selectors.isVideoDisabled);
   readonly audioDisabled = select(Selectors.isAudioDisabled);
   readonly devicesConfigured = select(Selectors.devicesConfigured);
+  readonly audioDeviceSet = computed(() => !!this.preferredAudioDevice());
+  readonly videoDeviceSet = computed(() => !!this.preferredVideoDevice());
   showDevicesConfigSidebar = false;
   showInviteDialog = false;
+  initConnection = false;
+  readonly reconnecting = toSignal(this.actions$.pipe(
+    ofActionDispatched(UpdateConnectionStatus),
+    map(({ status }) => status == 'reconnecting')
+  ));
   private readonly mediaDevices = toSignal(this.actions$.pipe(
     ofActionDispatched(DevicesFound),
     map(({ devices }) => devices)
@@ -80,13 +125,13 @@ export class RoomPageComponent implements OnInit {
     const devices = this.mediaDevices();
     if (!devices) return [];
 
-    return devices.filter(m => m.type == 'video');
+    return [({ id: null, type: 'video', name: 'No Device' }), ...devices.filter(m => m.type == 'video')];
   });
   readonly audioDevices = computed(() => {
     const devices = this.mediaDevices();
     if (!devices) return [];
 
-    return devices.filter(m => m.type == 'audio');
+    return [({ id: null, type: 'audio', name: 'No Device' }), ...devices.filter(m => m.type == 'audio')];
   });
   readonly loadingDevices = signal(false);
   readonly deviceConfigForm = new FormGroup({
@@ -115,14 +160,37 @@ export class RoomPageComponent implements OnInit {
   ));
 
   constructor() {
+    this.actions$.pipe(
+      takeUntilDestroyed(),
+      ofActionErrored(RoomError),
+      filter(({ result }) => (result.error as RoomError | undefined)?.roomId == this.roomId() && !!this.roomId()),
+      map(({ result }) => result.error)
+    ).subscribe((e) => {
+      this.messageService.add(errorToMessage(e as Error));
+    });
+
+    this.actions$.pipe(
+      takeUntilDestroyed(),
+      ofActionDispatched(UpdateConnectionStatus),
+      filter(({ status }) => status == 'connected'),
+      take(1)
+    ).subscribe(() => this.initConnection = true);
+
     effect(() => {
       if (!this.devicesConfigured())
         this.showDevicesConfigSidebar = true;
     }, { allowSignalWrites: true });
-  }
+    effect(() => {
+      const roomId = this.roomId();
+      if (!roomId) return;
+      this.roomConnectFn(roomId);
+    });
 
-  ngOnInit(): void {
-    this.roomConnectFn(this.roomId);
+    effect(() => {
+      const roomName = this.roomInfo()?.name;
+      if (!roomName) return;
+      this.title.setTitle(roomName);
+    })
   }
 
   onDeviceConfigSidebarShown() {

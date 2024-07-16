@@ -30,8 +30,8 @@ export class RoomController {
 
   @Get(':id/connectable-sessions')
   @UseInterceptors(ClassSerializerInterceptor)
-  async findConnectableSessions(@Param('id') roomId: string, @Ctx('user') user: Principal) {
-    return await this.roomService.findConnectableSessionsFor(roomId, user.userId);
+  async findConnectableSessions(@Param('id') roomId: string, @Ctx('user') { userId }: Principal) {
+    return await this.roomService.findConnectableSessionsFor(roomId, userId);
   }
 
   @Get(':id/session')

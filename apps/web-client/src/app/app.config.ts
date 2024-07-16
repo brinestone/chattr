@@ -11,9 +11,9 @@ import { StorageOption, withNgxsStoragePlugin } from '@ngxs/storage-plugin';
 import { provideStore } from '@ngxs/store';
 import { appRoutes } from './app.routes';
 import { jwtTokenInterceptor } from './interceptors/jwt-token.interceptor';
+import { DEVICE_STATE, DeviceState } from './state/devices.state';
 import { RoomState } from './state/room.state';
-import { UserState } from './state/user.state';
-import { DeviceState } from './state/devices.state';
+import { USER_STATE, UserState } from './state/user.state';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -29,7 +29,7 @@ export const appConfig: ApplicationConfig = {
       }),
       withNgxsStoragePlugin({
         storage: StorageOption.SessionStorage,
-        keys: '*'
+        keys: [USER_STATE, DEVICE_STATE]
       }))
   ],
 };

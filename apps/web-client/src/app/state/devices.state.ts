@@ -1,6 +1,6 @@
 import { Injectable, inject } from "@angular/core";
-import { Action, State, StateContext } from "@ngxs/store";
-import { patch } from "@ngxs/store/operators";
+import { Action, State, StateContext, StateToken } from "@ngxs/store";
+import { iif, patch } from "@ngxs/store/operators";
 import { tap } from "rxjs";
 import { DevicesFound, FindDevices, SaveDeviceConfig, SetAudioDevice, SetVideoDevice, ToggleAudio, ToggleVideo } from "../actions";
 import { DeviceService } from "../services/device.service";
@@ -18,9 +18,11 @@ export interface DeviceStateModel {
 
 type Context = StateContext<DeviceStateModel>;
 
+export const DEVICE_STATE = new StateToken<DeviceStateModel>('devices');
+
 @Injectable()
 @State<DeviceStateModel>({
-    name: 'devices',
+    name: DEVICE_STATE,
     defaults: {
         configured: false
     }
@@ -57,7 +59,8 @@ export class DeviceState {
     onSetAudioDevice(ctx: Context, { id }: SetAudioDevice) {
         ctx.setState(patch({
             audio: patch({
-                deviceId: id
+                deviceId: id,
+                disabled: iif(!id, true)
             })
         }));
         ctx.dispatch(SaveDeviceConfig);
@@ -67,7 +70,8 @@ export class DeviceState {
     onSetVideoDevice(ctx: Context, { id }: SetVideoDevice) {
         ctx.setState(patch({
             video: patch({
-                deviceId: id
+                deviceId: id,
+                disabled: iif(!id, true)
             })
         }))
         ctx.dispatch(SaveDeviceConfig);

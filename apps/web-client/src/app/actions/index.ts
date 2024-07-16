@@ -107,9 +107,11 @@ export class UpdateConnectionStatus {
   constructor(readonly status: ConnectionStatus, readonly reason?: string) { }
 }
 
-export class ServerError {
-  static type = `[Room] Server Error`;
-  constructor(readonly message: string) { }
+export class RoomError extends Error {
+  static type = `[Room] Error`;
+  constructor(message: string, readonly roomId: string, readonly sessionId?: string) {
+    super(message);
+  }
 }
 
 export class CreateServerSideConsumer {
@@ -130,6 +132,11 @@ export class CloseServerSideConsumer {
 export class ToggleConsumerStream {
   static type = `[Room] Toggle Consumer Stream`;
   constructor(readonly consumerId: string) { }
+}
+
+export class ConsumerStreamToggled {
+  static type = `[Room] Consumer Stream Toggled`;
+  constructor(readonly consumerId: string, readonly paused: boolean) { }
 }
 
 export class ToggleAudio {

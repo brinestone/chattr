@@ -3,6 +3,13 @@ import { ActionCompletion, ActionType, Actions, ofActionCompleted, ofActionDispa
 import { Message } from "primeng/api";
 import { ObservableInput, identity, map, merge, mergeMap, throwError } from "rxjs";
 
+export function extractInitials(text?: string) {
+    if (!text) return '';
+    const tokens = text.trim().toUpperCase().split(' ').map(x => x[0]);
+    if (!tokens) return '';
+    return [tokens[0], tokens[1]].join('');
+}
+
 export function monitorAction<TOutput, TAction = ActionType>(actions$: Actions, actionType: ActionType, dispatchMapper?: (action: TAction) => TOutput, completionMapper?: (completion: ActionCompletion<TAction>) => TOutput | ActionCompletion<TAction>) {
     return merge([
         actions$.pipe(

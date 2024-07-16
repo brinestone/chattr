@@ -18,7 +18,7 @@ export class RoleGuard implements CanActivate {
         const roomId = socket.data['roomId'];
         if (!principal || !roomId) return false;
 
-        const isInRole = await this.roomService.isMemberInRoles(principal.userId, roomId, roles);
+        const isInRole = await this.roomService.isMemberInRoles(principal.userId, roomId, ...roles);
         return isInRole;
     }
 
