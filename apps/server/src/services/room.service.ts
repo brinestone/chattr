@@ -1,5 +1,6 @@
 import { ICreateRoomInviteRequest, IRoomMembership, RoomMemberRole } from '@chattr/interfaces';
 import { ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, PreconditionFailedException, UnprocessableEntityException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash } from 'crypto';
 import EventEmitter from 'events';
@@ -20,14 +21,18 @@ import {
 import { HydratedDocument, Model, Types } from 'mongoose';
 import { cpus, networkInterfaces } from 'os';
 import {
+  EMPTY,
   concatMap,
   filter,
   forkJoin,
   from,
   fromEvent,
   identity,
+  interval,
+  last,
   mergeMap,
   of,
+  switchMap,
   take
 } from 'rxjs';
 import { Events } from '../events';
@@ -83,6 +88,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     @InjectModel(Room.name) private model: Model<Room>,
     @InjectModel(RoomMembership.name)
     private memberModel: Model<RoomMembership>,
+    private configService: ConfigService,
     @InjectModel(RoomSession.name)
     private sessionModel: Model<RoomSession>,
     private updatesService: UpdatesService,
@@ -92,6 +98,20 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
 
   private get nextWorker() {
     return this.workers[++this.nextWorkerIndex % this.workers.length];
+  }
+
+  observeStats(type: 'producer' | 'consumer', id: string) {
+    const target: Producer | Consumer = type == 'producer' ? this.producers[id] : this.consumers[id];
+    if (!target) {
+      this.logger.warn(`Cannot open stats observer for ${type}::${id} because it was not found`);
+      return EMPTY;
+    }
+    return interval(5000).pipe(
+      mergeMap(() => from(target.getStats()).pipe(
+        switchMap(identity),
+        last()
+      )),
+    )
   }
 
   async leaveSessions(userId: string, ...sessionIds: string[]) {
@@ -125,10 +145,9 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
   async toggleConsumer(consumerId: string) {
     const consumer = this.consumers[consumerId];
     if (!consumer) throw new NotFoundException('Consumer not found');
-    this.logger.debug(`Consumer State before toggling: paused = ${consumer.paused}`);
     if (consumer.paused) await consumer.resume();
-    await consumer.pause();
-    this.logger.debug(`Consumer State after toggling: paused = ${consumer.paused}`);
+    else
+      await consumer.pause();
 
     const ans = { paused: consumer.paused };
     return ans;
@@ -225,8 +244,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
 
   closeConsumer(consumerId: string) {
     const consumer = this.consumers[consumerId];
-    if (!consumer) throw new NotFoundException('Consumer: ' + consumerId + ' not found');
-    consumer.close();
+    consumer?.close();
     delete this.consumers[consumerId];
   }
 
@@ -262,7 +280,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const router = this.routers[roomId.toString()];
     if (!router.canConsume({ producerId, rtpCapabilities })) throw new UnprocessableEntityException('The producer media cannot be consumed');
 
-    const consumer = await transport.consume({ producerId, rtpCapabilities/* , paused: true */ });
+    const consumer = await transport.consume({ producerId, rtpCapabilities, paused: true });
     this.consumers[consumer.id] = consumer;
     return { rtpParameters: consumer.rtpParameters, kind: consumer.kind, id: consumer.id, type: consumer.type };
   }
@@ -379,6 +397,8 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
               logLevel: 'debug',
               rtcMaxPort: 50000,
               rtcMinPort: 40000,
+              dtlsCertificateFile: this.configService.get<string>('DTLS_CERT_PATH'),
+              dtlsPrivateKeyFile: this.configService.get<string>('DTLS_PRIVATE_KEY'),
             }),
             of(index),
           ]).pipe(

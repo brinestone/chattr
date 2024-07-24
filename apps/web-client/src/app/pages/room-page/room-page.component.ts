@@ -1,4 +1,4 @@
-import { state, style, trigger, transition, animate, query } from '@angular/animations';
+import { animate, query, state, style, transition, trigger } from '@angular/animations';
 import { NgClass, NgStyle, SlicePipe } from '@angular/common';
 import {
   Component,
@@ -27,7 +27,6 @@ import { ConnectToRoom, CreateInviteLink, DevicesFound, FindDevices, RoomError, 
 import { RoomMemberComponent } from '../../components/room-member/room-member.component';
 import { Selectors } from '../../state/selectors';
 import { errorToMessage } from '../../util';
-import { MediaDevice } from '../../services/room.service';
 @Component({
   selector: 'chattr-room-page',
   standalone: true,

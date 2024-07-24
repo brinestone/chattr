@@ -1,6 +1,6 @@
 import { ConnectionStatus, ILoginRequest, ISignupRequest, InviteInfo } from "@chattr/interfaces";
 import { MediaKind, RtpCapabilities, RtpParameters } from "mediasoup-client/lib/RtpParameters";
-import { DtlsParameters } from "mediasoup-client/lib/Transport";
+import { DtlsParameters, TransportOptions } from "mediasoup-client/lib/Transport";
 import { MediaDevice } from "../services/room.service";
 
 export class FindDevices {
@@ -79,7 +79,7 @@ export class LeaveSession {
 
 export class SessionJoined {
   static type = '[Room] Session Joined';
-  constructor(readonly transportParams: unknown, readonly rtpCapabilities: RtpCapabilities, readonly sessionId: string) { }
+  constructor(readonly transportParams: TransportOptions, readonly rtpCapabilities: RtpCapabilities, readonly sessionId: string) { }
 }
 
 export class ConnectTransport {
@@ -122,6 +122,21 @@ export class CreateServerSideConsumer {
 export class ServerSideConsumerCreated {
   static type = `[Room] Server-side Consumer created`;
   constructor(readonly id: string, readonly kind: MediaKind, readonly sessionId: string, readonly producerId: string, readonly rtpParameters: RtpParameters) { }
+}
+
+export class StatsSubscribe {
+  static type = `[Room] Get Consumer Stats`;
+  constructor(readonly id: string, readonly type: 'consumer' | 'producer') { }
+}
+
+export class StatsEnded {
+  static type = `[Room] Stats Ended`;
+  constructor(readonly id: string) { }
+}
+
+export class StatsUpdated {
+  static type = `[Room] Stats Fetched`;
+  constructor(readonly id: string, readonly stats: RTCStatsReport, readonly type: 'consumer' | 'producer') { }
 }
 
 export class CloseServerSideConsumer {

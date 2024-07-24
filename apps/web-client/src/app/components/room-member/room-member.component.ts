@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, DestroyRef, EventEmitter, Injector, OnDestroy, Output, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, DestroyRef, EventEmitter, Injector, OnDestroy, Output, computed, effect, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { IRoomSession } from '@chattr/interfaces';
 import { Actions, dispatch, ofActionCompleted, ofActionDispatched, select } from '@ngxs/store';
@@ -6,10 +6,10 @@ import { Device } from 'mediasoup-client';
 import { Consumer } from 'mediasoup-client/lib/Consumer';
 import { RtpCapabilities } from 'mediasoup-client/lib/RtpParameters';
 import { Transport } from 'mediasoup-client/lib/Transport';
-import { Producer } from 'mediasoup-client/lib/types';
+import { Producer, TransportOptions } from 'mediasoup-client/lib/types';
 import { CardModule } from 'primeng/card';
 import { filter, fromEvent, take, takeUntil } from 'rxjs';
-import { CloseServerSideConsumer, CloseServerSideProducer, ConnectTransport, ConsumerStreamToggled, CreateServerSideConsumer, CreateServerSideProducer, JoinSession, LeaveSession, RemoteProducerClosed, RemoteProducerOpened, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, ToggleConsumerStream, TransportConnected, UpdateConnectionStatus } from '../../actions';
+import { CloseServerSideConsumer, CloseServerSideProducer, ConnectTransport, ConsumerStreamToggled, CreateServerSideConsumer, CreateServerSideProducer, JoinSession, LeaveSession, RemoteProducerClosed, RemoteProducerOpened, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, ToggleConsumerStream, TransportConnected } from '../../actions';
 import { Selectors } from '../../state/selectors';
 
 const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').substring(1);
@@ -20,12 +20,13 @@ const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--p
   templateUrl: './room-member.component.html',
   styleUrl: './room-member.component.scss',
 })
-export class RoomMemberComponent implements AfterViewInit, OnDestroy {
+export class RoomMemberComponent implements OnDestroy {
   private readonly actions$ = inject(Actions);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   readonly session = input.required<IRoomSession>();
   private readonly producibleSession = select(Selectors.producibleSession);
+  private readonly connectionStatus = select(Selectors.connectionStatus);
   private readonly joinSessionFn = dispatch(JoinSession);
   private readonly transportConnectFn = dispatch(ConnectTransport);
   private readonly consumerToggleFn = dispatch(ToggleConsumerStream);
@@ -46,8 +47,13 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
     const stream = this.sessionStream();
     if (!stream) return false;
     return stream.getVideoTracks().length > 0;
-  })
-  private readonly canPublish = computed(() => {
+  });
+  readonly audioTrackAvailable = computed(() => {
+    const stream = this.sessionStream();
+    if (!stream) return false;
+    return stream.getAudioTracks().length > 0;
+  });
+  readonly canPublish = computed(() => {
     const producibleSession = this.producibleSession();
     const session = this.session();
     return session.id == producibleSession?.id;
@@ -90,11 +96,11 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
     this.leaveSessionFn(this.session().id);
   }
 
-  ngAfterViewInit(): void {
+  constructor() {
     this.actions$.pipe(
       takeUntilDestroyed(this.destroyRef),
       ofActionCompleted(SessionJoined),
-      filter(completion => completion.action.sessionId == this.session().id),
+      filter(({ action }) => action.sessionId == this.session().id),
     ).subscribe(async ({ action: { rtpCapabilities, transportParams } }) => {
       await this.setupDevice(rtpCapabilities);
       this.setupTransports(transportParams);
@@ -105,12 +111,14 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
       }
     });
 
-    this.actions$.pipe(
-      takeUntilDestroyed(this.destroyRef),
-      ofActionDispatched(UpdateConnectionStatus),
-      filter(({ status }) => status == 'connected')
-    ).subscribe(() => this.joinSessionFn(this.session().id));
-    this.joinSessionFn(this.session().id);
+    effect(() => {
+      console.log(this.session().id, this.videoTrackAvailable(), this.audioTrackAvailable());
+    })
+    effect(() => {
+      const status = this.connectionStatus();
+      if (status === 'connected')
+        this.joinSessionFn(this.session().id);
+    });
   }
 
   private startConsuming() {
@@ -136,6 +144,7 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
     ).subscribe(async ({ id, kind, rtpParameters }) => {
       if (!this.transport) return;
       const consumer = await this.transport.consume({ id, kind, producerId, rtpParameters, });
+
       this.consumers.set(consumer.id, consumer);
 
       this.actions$.pipe(
@@ -169,20 +178,37 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
         filter(({ consumerId }) => consumerId == consumer.id)
       ).subscribe(action => consumerStreamToggledCallback(action));
 
+
+      consumer.on('trackended', () => {
+        const { track } = consumer;
+        this.sessionStream.update((currentStream) => {
+          if (!currentStream) return null;
+          currentStream.removeTrack(track);
+
+          if (currentStream.getTracks().length == 0) return null;
+          else {
+            return new MediaStream([...currentStream.getTracks(), track]);
+          }
+        })
+      });
+
       consumer.observer.on('close', () => {
         const { track } = consumer;
         this.sessionStream.update((currentStream) => {
           if (!currentStream) return null;
           currentStream.removeTrack(track);
-          return currentStream;
+
+          if (currentStream.getTracks().length == 0) return null;
+          else {
+            return new MediaStream([...currentStream.getTracks(), track]);
+          }
         });
 
         this.consumers.delete(consumer.id);
         this.closeConsumerFn(id);
       });
 
-      // console.log(consumer.paused);
-      // this.consumerToggleFn(id);
+      this.consumerToggleFn(id);
 
       consumerStreamToggledCallback({ paused: false, consumerId: id });
     });
@@ -192,6 +218,7 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
 
   private startPublishing() {
     effect(async () => {
+      if (!this.transport) return;
       console.log('Device config changed. Updating session stream');
       const audioDevice = this.preferredAudioDevice();
       const videoDevice = this.preferredVideoDevice();
@@ -233,12 +260,12 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
 
         if (constraints.video) {
           const track = currentStream.getVideoTracks()[0];
-          videoProducer = videoProducer ?? (await this.transport!.produce({ track }));
+          videoProducer = videoProducer ?? (await this.transport.produce({ track }));
         }
 
         if (constraints.audio) {
           const track = currentStream.getAudioTracks()[0];
-          audioProducer = audioProducer ?? (await this.transport!.produce({ track }));
+          audioProducer = audioProducer ?? (await this.transport.produce({ track }));
         }
       }
 
@@ -261,7 +288,7 @@ export class RoomMemberComponent implements AfterViewInit, OnDestroy {
     }, { injector: this.injector, allowSignalWrites: true });
   }
 
-  private setupTransports(transportParams: any) {
+  private setupTransports(transportParams: TransportOptions) {
     if (this.canPublish()) {
       this.transport = this.device.createSendTransport(transportParams);
       this.transport.on('produce', ({ kind, rtpParameters }, callback, errBack) => {

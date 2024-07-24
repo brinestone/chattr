@@ -3,7 +3,7 @@ import { ConnectionStatus, IRoom, IRoomSession } from '@chattr/interfaces';
 import { Action, Actions, NgxsOnInit, State, StateContext, ofActionErrored, select } from '@ngxs/store';
 import { append, iif, patch, removeItem } from '@ngxs/store/operators';
 import { EMPTY, filter, forkJoin, from, mergeMap, of, switchMap, tap, throwError } from 'rxjs';
-import { ClearConnectedRoom, CloseServerSideConsumer, CloseServerSideProducer, ConnectToRoom, ConnectTransport, ConnectedRoomChanged, ConsumerStreamToggled, CreateInviteLink, CreateRoom, CreateServerSideConsumer, CreateServerSideProducer, InvitationInfoLoaded, JoinSession, LeaveSession, LoadInvitationInfo, LoadRooms, RemoteSessionClosed, RemoteSessionOpened, RoomError, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, ToggleConsumerStream, TransportConnected, UpdateConnectionStatus, UpdateInvite } from '../actions';
+import { ClearConnectedRoom, CloseServerSideConsumer, CloseServerSideProducer, ConnectToRoom, ConnectTransport, ConnectedRoomChanged, StatsSubscribe, ConsumerStreamToggled, CreateInviteLink, CreateRoom, CreateServerSideConsumer, CreateServerSideProducer, InvitationInfoLoaded, JoinSession, LeaveSession, LoadInvitationInfo, LoadRooms, RemoteSessionClosed, RemoteSessionOpened, RoomError, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, ToggleConsumerStream, TransportConnected, UpdateConnectionStatus, UpdateInvite } from '../actions';
 import { RoomService } from '../services/room.service';
 import { Selectors } from './selectors';
 
@@ -37,6 +37,11 @@ export class RoomState implements NgxsOnInit {
 
   ngxsOnInit(ctx: Context): void {
     ctx.dispatch(ClearConnectedRoom);
+  }
+
+  @Action(StatsSubscribe)
+  onConsumerStatsSubscribe(_: Context, { id, type }: StatsSubscribe) {
+    this.roomService.openConsumerStatsStream(id, type);
   }
 
   @Action(ToggleConsumerStream)

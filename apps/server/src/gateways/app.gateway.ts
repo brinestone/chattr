@@ -11,7 +11,7 @@ import {
   WsException
 } from '@nestjs/websockets';
 import { DtlsParameters, MediaKind, RtpCapabilities, RtpParameters } from 'mediasoup/node/lib/types';
-import { fromEvent } from 'rxjs';
+import { Subscription, fromEvent } from 'rxjs';
 import { Server, Socket } from 'socket.io';
 import { Ctx } from '../decorators/extract-from-context.decorator';
 import { Roles } from '../decorators/room-role';
@@ -31,6 +31,7 @@ function getElevatedChannel(roomId: string) {
 @UseGuards(WsGuard)
 export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnApplicationBootstrap {
   private readonly logger = new Logger(AppGateway.name);
+  private readonly statsSubscriptions = new Map<string, Subscription>()
   @WebSocketServer() private server: Server;
   constructor(private roomService: RoomService) { }
 
@@ -63,9 +64,31 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnA
     })
   }
 
+  @SubscribeMessage(Signaling.StatsSubscribe)
+  createStatsSubscription(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() { type, id }: { type: 'consumer' | 'producer', id: string }
+  ) {
+    const subscription = this.roomService.observeStats(type, id).subscribe({
+      next: (update) => {
+        socket.emit(Signaling.StatsUpdate, { id, type, update });
+      },
+      error: (error: Error) => {
+        this.logger.error(error.message, error.stack);
+        socket.emit(Signaling.StatsEnd, { id });
+      },
+      complete: () => {
+        socket.emit(Signaling.StatsEnd, { id });
+      }
+    });
+    subscription.add(() => {
+      this.statsSubscriptions.delete(id);
+    });
+    this.statsSubscriptions.set(id, subscription);
+  }
+
   @SubscribeMessage(Signaling.LeaveSession)
   async handleSessionLeave(
-    @ConnectedSocket() socket: Socket,
     @Ctx('user') { userId }: Principal,
     @MessageBody() { sessionId }: { sessionId: string }
   ) {
@@ -101,7 +124,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnA
         socket.to(getElevatedChannel(roomId)).emit(Signaling.AdmissionApproved, { approvedBy: userId });
       }
     } catch (err) {
-      if (err instanceof UnprocessableEntityException) { }
+      if (err instanceof UnprocessableEntityException) return;
       else throw new WsException(err);
     }
   }
@@ -184,14 +207,12 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnA
 
   @SubscribeMessage(Signaling.ConnectTransport)
   async handleConnectTransport(
-    @ConnectedSocket() socket: Socket,
     @Ctx('user') principal: Principal,
     @MessageBody() { dtlsParameters, sessionId }: { dtlsParameters: DtlsParameters; sessionId: string }
   ) {
     try {
       await this.roomService
         .connectTransport(sessionId, dtlsParameters, principal.userId);
-      const roomId = socket.data['roomId'];
       return {};
     } catch (err) {
       throw new WsException(err);

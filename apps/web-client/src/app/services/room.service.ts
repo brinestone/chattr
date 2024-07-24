@@ -13,7 +13,7 @@ import {
 } from 'rxjs';
 import { Socket, io } from 'socket.io-client';
 import { environment } from '../../environments/environment.development';
-import { RemoteProducerClosed, RemoteProducerOpened, RemoteSessionClosed, RemoteSessionOpened, RoomError, UpdateConnectionStatus } from '../actions';
+import { RemoteProducerClosed, RemoteProducerOpened, RemoteSessionClosed, RemoteSessionOpened, RoomError, StatsEnded, StatsUpdated, UpdateConnectionStatus } from '../actions';
 import { parseHttpClientError } from '../util';
 
 export type RoomEvent<T = any> = {
@@ -69,6 +69,10 @@ export class RoomService {
   closeConsumer(consumerId: string) {
     this.assertSocket();
     this.socket!.emit(Signaling.CloseConsumer, { consumerId });
+  }
+
+  openConsumerStatsStream(consumerId: string, type: 'consumer' | 'producer') {
+    this.socket!.emit(Signaling.StatsSubscribe, { type, id: consumerId });
   }
 
   async closeProducer(sessionId: string, producerId: string) {
@@ -179,6 +183,14 @@ export class RoomService {
 
     socket.on(Signaling.ProducerClosed, ({ producerId, sessionId }: { producerId: string, sessionId: string }) => {
       this.store.dispatch(new RemoteProducerClosed(sessionId, producerId));
+    });
+
+    socket.on(Signaling.StatsEnd, ({ id }: { id: string }) => {
+      this.store.dispatch(new StatsEnded(id));
+    });
+
+    socket.on(Signaling.StatsUpdate, ({ id, update, type }: { id: string, update: any, type: 'producer' | 'consumer' }) => {
+      this.store.dispatch(new StatsUpdated(id, update, type));
     });
   }
 

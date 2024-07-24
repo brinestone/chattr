@@ -114,5 +114,8 @@ export enum Signaling {
   AdmissionPending = 'ADMISSION_PENDING',
   AdmissionApproved = 'ADMISSION_APPROVED',
   ApproveAdmission = 'APPROVE_ADMISSION',
-  ToggleConsumer = 'TOGGLE_CONSUMER'
+  ToggleConsumer = 'TOGGLE_CONSUMER',
+  StatsSubscribe = 'STATS_SUBSCRIBE',
+  StatsUpdate = 'STATS_UPDATE',
+  StatsEnd = 'STATS_END'
 }

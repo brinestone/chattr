@@ -11,6 +11,11 @@ export class Selectors {
     private static deviceSlices = createPropertySelectors<DeviceStateModel>(DeviceState);
 
     @Selector([Selectors.roomSlices.connectedRoom])
+    static connectionStatus(connectedRoom?: ConnectedRoom) {
+        return connectedRoom?.connectionStatus;
+    }
+
+    @Selector([Selectors.roomSlices.connectedRoom])
     static connectedRoomInfo(connectedRoom?: ConnectedRoom) {
         return connectedRoom?.info;
     }
