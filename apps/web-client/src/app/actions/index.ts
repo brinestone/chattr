@@ -206,3 +206,17 @@ export class UpdateInvite {
   static type = '[Room] Update Invite'
   constructor(readonly accepted: boolean, readonly code: string) { }
 }
+
+export class SpeakingSessionChanged {
+  static type = '[Room] Speaking Session Changed';
+  constructor(readonly sessionId: string) { }
+}
+
+export class CreatePresentation {
+  static type = '[Room] Create Presentation';
+}
+
+export class PresentationUpdated {
+  static type = '[Room] Presentation Updated';
+  constructor(readonly id: string, readonly timestamp: Date) { }
+}

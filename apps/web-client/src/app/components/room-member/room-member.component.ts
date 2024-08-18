@@ -1,5 +1,6 @@
-import { Component, DestroyRef, EventEmitter, Injector, OnDestroy, Output, computed, effect, inject, input, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { animate, state, style, transition, trigger } from '@angular/animations';
+import { Component, DestroyRef, Injector, OnDestroy, computed, effect, inject, input, output, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { IRoomSession } from '@chattr/interfaces';
 import { Actions, dispatch, ofActionCompleted, ofActionDispatched, select } from '@ngxs/store';
 import { Device } from 'mediasoup-client';
@@ -7,18 +8,33 @@ import { Consumer } from 'mediasoup-client/lib/Consumer';
 import { RtpCapabilities } from 'mediasoup-client/lib/RtpParameters';
 import { Transport } from 'mediasoup-client/lib/Transport';
 import { Producer, TransportOptions } from 'mediasoup-client/lib/types';
+import { AvatarModule } from 'primeng/avatar';
 import { CardModule } from 'primeng/card';
-import { filter, fromEvent, take, takeUntil } from 'rxjs';
-import { CloseServerSideConsumer, CloseServerSideProducer, ConnectTransport, ConsumerStreamToggled, CreateServerSideConsumer, CreateServerSideProducer, JoinSession, LeaveSession, RemoteProducerClosed, RemoteProducerOpened, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, ToggleConsumerStream, TransportConnected } from '../../actions';
+import { filter, fromEvent, map, take, takeUntil } from 'rxjs';
+import { CloseServerSideConsumer, CloseServerSideProducer, ConnectTransport, ConsumerStreamToggled, CreateServerSideConsumer, CreateServerSideProducer, JoinSession, LeaveSession, RemoteProducerClosed, RemoteProducerOpened, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, SpeakingSessionChanged, ToggleConsumerStream, TransportConnected } from '../../actions';
 import { Selectors } from '../../state/selectors';
 
 const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').substring(1);
+
 @Component({
   selector: 'chattr-room-member',
   standalone: true,
-  imports: [CardModule],
+  imports: [CardModule, AvatarModule],
   templateUrl: './room-member.component.html',
   styleUrl: './room-member.component.scss',
+  animations: [
+    trigger('speakerIndicator', [
+      state('active', style({
+        borderWidth: '5px'
+      })),
+      state('inactive', style({
+        borderWidth: '0'
+      })),
+      transition('active <=> inactive', [
+        animate('50ms linear')
+      ])
+    ])
+  ]
 })
 export class RoomMemberComponent implements OnDestroy {
   private readonly actions$ = inject(Actions);
@@ -43,6 +59,10 @@ export class RoomMemberComponent implements OnDestroy {
   private videoProducer?: Producer;
   private audioProducer?: Producer;
   readonly sessionStream = signal<MediaStream | null>(null);
+  readonly activeSpeaking = toSignal(this.actions$.pipe(
+    ofActionDispatched(SpeakingSessionChanged),
+    map(({ sessionId }) => sessionId == this.session().id)
+  ));
   readonly videoTrackAvailable = computed(() => {
     const stream = this.sessionStream();
     if (!stream) return false;
@@ -58,8 +78,7 @@ export class RoomMemberComponent implements OnDestroy {
     const session = this.session();
     return session.id == producibleSession?.id;
   });
-  @Output()
-  readonly errored = new EventEmitter<Error>();
+  readonly errored = output<Error>()
   readonly avatar = computed(() => {
     const { displayName, avatar } = this.session();
     if (avatar) return avatar;
@@ -110,15 +129,12 @@ export class RoomMemberComponent implements OnDestroy {
         this.startConsuming();
       }
     });
-
-    effect(() => {
-      console.log(this.session().id, this.videoTrackAvailable(), this.audioTrackAvailable());
-    })
     effect(() => {
       const status = this.connectionStatus();
       if (status === 'connected')
         this.joinSessionFn(this.session().id);
     });
+    effect(() => console.log(this.activeSpeaking()))
   }
 
   private startConsuming() {

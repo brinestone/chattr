@@ -2,6 +2,7 @@ import {
   IEntity,
   IInvite,
   INotification,
+  IPresentation,
   IRoom,
   IRoomMembership,
   IRoomSession,
@@ -333,4 +334,41 @@ export class Update extends BaseEntity implements IUpdate {
 export const UpdateSchema = SchemaFactory.createForClass(Update).pre('save', function (next) {
   this.increment();
   return next();
-})
+});
+
+@Schema({ timestamps: true })
+export class Presentation extends BaseEntity implements IPresentation {
+  @Prop({ required: true })
+  displayName: string;
+
+  @Transform(({ value }) => {
+    return (value as MongooseSchema.Types.ObjectId).toString();
+  }, { toPlainOnly: true })
+  @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: RoomMembership.name })
+  owner?: string;
+
+  @Transform(({ value }) => {
+    return (value as MongooseSchema.Types.ObjectId).toString();
+  }, { toPlainOnly: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: RoomSession.name, required: true })
+  parentSession: string;
+
+  @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: Room.name })
+  @Exclude()
+  room: MongooseSchema.Types.ObjectId;
+
+  @Prop({})
+  endedAt?: Date;
+
+  constructor(data?: Partial<Presentation>) {
+    super();
+    if (data) Object.assign(this, data);
+  }
+}
+
+export const PresentationSchema = SchemaFactory.createForClass(Presentation)
+  .pre('save', function (next) {
+    if (!this.isNew)
+      this.increment();
+    return next();
+  });

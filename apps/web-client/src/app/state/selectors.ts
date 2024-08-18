@@ -1,5 +1,5 @@
 import { IRoom, IRoomSession } from "@chattr/interfaces";
-import { Selector, createPropertySelectors } from "@ngxs/store";
+import { Selector, createPickSelector, createPropertySelectors } from "@ngxs/store";
 import { DeviceConfig, DeviceState, DeviceStateModel } from "./devices.state";
 import { ConnectedRoom, RoomState, RoomStateModel } from "./room.state";
 import { UserState, UserStateModel } from "./user.state";
@@ -9,6 +9,11 @@ export class Selectors {
     private static userSlices = createPropertySelectors<UserStateModel>(UserState);
     private static roomSlices = createPropertySelectors<RoomStateModel>(RoomState);
     private static deviceSlices = createPropertySelectors<DeviceStateModel>(DeviceState);
+
+    @Selector([Selectors.roomSlices.connectedRoom])
+    static currentPresentation(connectedRoom?: ConnectedRoom) {
+        return connectedRoom?.presentation;
+    }
 
     @Selector([Selectors.roomSlices.connectedRoom])
     static connectionStatus(connectedRoom?: ConnectedRoom) {

@@ -23,10 +23,11 @@ import { SidebarModule } from 'primeng/sidebar';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { EMPTY, filter, map, switchMap, take } from 'rxjs';
-import { ConnectToRoom, CreateInviteLink, DevicesFound, FindDevices, RoomError, SetAudioDevice, SetVideoDevice, ToggleAudio, ToggleVideo, UpdateConnectionStatus } from '../../actions';
+import { ConnectToRoom, CreateInviteLink, CreatePresentation, DevicesFound, FindDevices, RoomError, SetAudioDevice, SetVideoDevice, ToggleAudio, ToggleVideo, UpdateConnectionStatus } from '../../actions';
 import { RoomMemberComponent } from '../../components/room-member/room-member.component';
 import { Selectors } from '../../state/selectors';
 import { errorToMessage } from '../../util';
+import { RoomPresentationComponent } from '../../components/room-presentation/room-presentation.component';
 @Component({
   selector: 'chattr-room-page',
   standalone: true,
@@ -41,6 +42,7 @@ import { errorToMessage } from '../../util';
     ProgressSpinnerModule,
     NgClass,
     DividerModule,
+    RoomPresentationComponent,
     RoomMemberComponent,
     SidebarModule,
     BadgeModule,
@@ -83,6 +85,7 @@ import { errorToMessage } from '../../util';
   ]
 })
 export class RoomPageComponent {
+  private readonly createPresentationFn = dispatch(CreatePresentation);
   private readonly roomConnectFn = dispatch(ConnectToRoom);
   private readonly loadDevicesFn = dispatch(FindDevices);
   private readonly setAudioDeviceFn = dispatch(SetAudioDevice);
@@ -108,6 +111,7 @@ export class RoomPageComponent {
   readonly devicesConfigured = select(Selectors.devicesConfigured);
   readonly audioDeviceSet = computed(() => !!this.preferredAudioDevice());
   readonly videoDeviceSet = computed(() => !!this.preferredVideoDevice());
+  readonly presentation = select(Selectors.currentPresentation);
   showDevicesConfigSidebar = false;
   showInviteDialog = false;
   initConnection = false;
@@ -133,6 +137,7 @@ export class RoomPageComponent {
     return [({ id: null, type: 'audio', name: 'No Device' }), ...devices.filter(m => m.type == 'audio')];
   });
   readonly loadingDevices = signal(false);
+  readonly spectorsPanelExpanded = signal(false);
   readonly deviceConfigForm = new FormGroup({
     audio: new FormControl<string>('', []),
     video: new FormControl<string>('', [])
@@ -189,7 +194,7 @@ export class RoomPageComponent {
       const roomName = this.roomInfo()?.name;
       if (!roomName) return;
       this.title.setTitle(roomName);
-    })
+    });
   }
 
   onDeviceConfigSidebarShown() {
@@ -242,6 +247,14 @@ export class RoomPageComponent {
     this.createInviteLinkFn(redirectPath, 'code').subscribe({
       error: () => this.gettingShareLink.set(false),
       complete: () => this.gettingShareLink.set(false),
+    });
+  }
+
+  onPresentScreenButtonClicked() {
+    this.createPresentationFn().subscribe({
+      error: (error: Error) => {
+        this.messageService.add(errorToMessage(error));
+      }
     });
   }
 }

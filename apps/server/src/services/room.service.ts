@@ -1,9 +1,9 @@
 import { ICreateRoomInviteRequest, IRoomMembership, RoomMemberRole } from '@chattr/interfaces';
 import { ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, PreconditionFailedException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash } from 'crypto';
-import EventEmitter from 'events';
 import { createWorker } from 'mediasoup';
 import {
   Consumer,
@@ -36,11 +36,15 @@ import {
   take
 } from 'rxjs';
 import { Events } from '../events';
-import { Room, RoomMembership, RoomSession, User } from '../models';
+import { Presentation, Room, RoomMembership, RoomSession, User } from '../models';
 import { InvitationEventData, UpdatesService } from './updates.service';
 import { UserService } from './user.service';
 
 const ONE_HOUR = 3_600_000;
+const ROOM_ACCESS_DENIED = 'You are not permitted to access this room';
+const MSG_OPERATION_NOT_ALLOWED = 'Operation not allowed';
+const INVITATION_PENDING = 'Your invitation into this room has not yet been accepted';
+const MSG_PRESENTATION_NOT_FOUND = 'Presentation not found';
 
 let ip = '';
 
@@ -81,13 +85,14 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
   private readonly routers: Record<string, Router> = {};
   private readonly webRtcTransports: Record<string, WebRtcTransport> = {};
   private readonly producers: Record<string, Producer> = {};
-  readonly observer = new EventEmitter();
   private readonly consumers: Record<string, Consumer> = {};
   private nextWorkerIndex = -1;
   constructor(
+    private eventEmitter: EventEmitter2,
     @InjectModel(Room.name) private model: Model<Room>,
     @InjectModel(RoomMembership.name)
     private memberModel: Model<RoomMembership>,
+    @InjectModel(Presentation.name) private presentationModel: Model<Presentation>,
     private configService: ConfigService,
     @InjectModel(RoomSession.name)
     private sessionModel: Model<RoomSession>,
@@ -116,7 +121,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
 
   async leaveSessions(userId: string, ...sessionIds: string[]) {
     if (sessionIds.length == 0) return;
-    this.logger.verbose(`User: ${userId} is leaving sessions: ${sessionIds}...`);
+    this.logger.debug(`User: ${userId} is leaving sessions: ${sessionIds}...`);
     const now = new Date();
 
     for (const sessionId of sessionIds) {
@@ -169,7 +174,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   async admitMember(userId: string, memberId: string, displayName: string, roomId: string, clientIp: string, avatar?: string) {
-    this.logger.verbose(`Admission approved for user: ${userId} into the room: ${roomId}`);
+    this.logger.debug(`Admission approved for user: ${userId} into the room: ${roomId}`);
     const staleDate = new Date(Date.now() - ONE_HOUR);
     const sessionExists = await this.sessionModel.exists({
       clientIp,
@@ -249,7 +254,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   async closeSession(id: string) {
-    this.logger.verbose(`Closing session: ${id}`);
+    this.logger.debug(`Closing session: ${id}`);
     const sessionDoc = await this.sessionModel.findById(id);
     const memberDoc = await this.memberModel.findById(sessionDoc.member);
     const transportId = computeTransportId(sessionDoc.userId, id);
@@ -292,7 +297,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const roomDoc = await this.model.findById(roomId).exec();
 
     if (!membership || !roomDoc) throw new NotFoundException('Room not found');
-    if (membership.isBanned || membership.pending) throw new ForbiddenException('You are not permitted to access this room');
+    if (membership.isBanned || membership.pending) throw new ForbiddenException(ROOM_ACCESS_DENIED);
 
     const otherMembers = await this.memberModel.find({
       roomId,
@@ -332,7 +337,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const roomDoc = await this.model.findById(roomId).exec();
 
     if (!membership || !roomDoc) throw new NotFoundException('Room not found');
-    if (membership.isBanned) throw new ForbiddenException('You are not permitted to join access this room');
+    if (membership.isBanned) throw new ForbiddenException(ROOM_ACCESS_DENIED);
 
     return new Room(roomDoc.toObject());
   }
@@ -357,7 +362,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
       userId: id
     });
 
-    if (!memberDoc) throw new ForbiddenException(`Not a member of the room specified`);
+    if (!memberDoc) throw new ForbiddenException(ROOM_ACCESS_DENIED);
     return [new Room(roomDoc.toObject()), new RoomMembership(memberDoc.toObject())];
   }
 
@@ -388,7 +393,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   onApplicationBootstrap() {
-    this.logger.verbose('Starting workers...');
+    this.logger.debug('Starting workers...');
     from(this.workers)
       .pipe(
         concatMap((_, index) =>
@@ -420,58 +425,88 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
       )
       .subscribe({
         next: ([worker, server, index]) => {
-          this.logger.verbose(`worker::${worker.pid}::create`);
-          this.logger.verbose(`WebRtc Server::${server.id}::create`);
+          this.logger.debug(`worker::${worker.pid}::create`);
+          this.logger.debug(`WebRtc Server::${server.id}::create`);
           worker.appData.index = index;
           this.workers[index] = worker;
           this.webRtcServers[index] = server;
 
           server.observer.on('close', () => {
-            this.logger.verbose(
+            this.logger.debug(
               `WebRTC server::${server.id} closed on worker::${worker.pid}`
             );
           });
 
-          worker.observer.on('newrouter', (router) => {
+          worker.observer.on('newrouter', async (router) => {
             router.appData.serverIndex = index;
-            this.logger.verbose(
+            this.logger.debug(
               `New router::${router.id} on worker::${worker.pid}`
             );
 
+            const speakerObserver = await router.createActiveSpeakerObserver({
+              interval: 1500
+            });
+            const volumeObserver = await router.createAudioLevelObserver({
+              interval: 1500
+            });
+
+            this.logger.debug(`Speaker observer::${speakerObserver.id} created on router::${router.id}`);
+
+            speakerObserver.on('@close', () => {
+              this.logger.debug(`Speaker observer::${speakerObserver.id} closed on router::${router.id}`);
+            });
+
+            speakerObserver.on('dominantspeaker', ({ producer }) => {
+              const { roomId, sessionId } = producer.appData;
+              this.eventEmitter.emitAsync(Events.ActiveSessionChanged, { roomId, sessionId });
+              this.logger.verbose(`Speaking session changed in room::${roomId} to session::${sessionId}`)
+            });
+
             router.observer.on('close', () => {
-              this.logger.verbose(`Router::${router.id} closed on worker::${worker.pid}`);
+              this.logger.debug(`Router::${router.id} closed on worker::${worker.pid}`);
             })
 
             router.observer.on('newtransport', (transport) => {
-              this.logger.verbose(
+              this.logger.debug(
                 `New transport::${transport.id} on router::${router.id}`
               );
 
               transport.observer.on('close', () => {
-                this.logger.verbose(
+                this.logger.debug(
                   `Transport::${transport.id} closed on router::${router.id}`
                 );
               });
 
-              transport.observer.on('newproducer', (producer) => {
-                this.logger.verbose(
+              transport.observer.on('newproducer', async (producer) => {
+                this.logger.debug(
                   `New Producer::${producer.id} on transport::${transport.id}`
                 );
 
-                producer.observer.on('close', () => {
-                  this.logger.verbose(`Producer::${producer.id} closed on transport::${transport.id}`);
+                producer.observer.on('close', async () => {
+                  this.logger.debug(`Producer::${producer.id} closed on transport::${transport.id}`);
                   delete this.producers[producer.id];
+                  if (producer.kind == 'audio') {
+                    try {
+                      await speakerObserver.removeProducer({ producerId: producer.id });
+                    } catch (err) {
+                      this.logger.error(err.message);
+                    }
+                  }
                 });
 
+                if (producer.kind == 'audio') {
+                  await speakerObserver.addProducer({ producerId: producer.id });
+                  await volumeObserver.addProducer({ producerId: producer.id });
+                }
               });
 
               transport.observer.on('newconsumer', (consumer) => {
-                this.logger.verbose(
+                this.logger.debug(
                   `New Consumer::${consumer.id} on transport::${transport.id}`
                 );
 
                 consumer.observer.on('close', () => {
-                  this.logger.verbose(`Consumer::${consumer.id} closed on transport::${transport.id}`);
+                  this.logger.debug(`Consumer::${consumer.id} closed on transport::${transport.id}`);
                   delete this.consumers[consumer.id];
                 })
               });
@@ -479,7 +514,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
           });
         },
         complete: () =>
-          this.logger.verbose(
+          this.logger.debug(
             `${this.workers.length} workers started successfully`
           ),
         error: (error: Error) => {
@@ -487,7 +522,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
         },
       });
 
-    this.logger.verbose('Resolving IP address...');
+    this.logger.debug('Resolving IP address...');
     from(Object.values(networkInterfaces())).pipe(
       mergeMap(identity),
       filter(({ family, internal }) => family == 'IPv4' && !internal),
@@ -515,7 +550,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     }).exec();
 
     if (result.deletedCount == 0) this.logger.warn(`Could not remove any pending memberships for user: ${userId} in room: ${roomId} - No memberships were found`);
-    else this.logger.verbose(`Pending membership for user: ${userId} in room: ${roomId} was removed succesfully`);
+    else this.logger.debug(`Pending membership for user: ${userId} in room: ${roomId} was removed succesfully`);
   }
 
   async approveMembership(inviteId: string, userId: string, roomId: string, targeted: boolean) {
@@ -560,7 +595,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
           }).save();
         }
       }
-      this.logger.verbose(`Membership for user: ${userId} has been approved`);
+      this.logger.debug(`Membership for user: ${userId} has been approved`);
 
       await this.model.findByIdAndUpdate(roomId, {
         $push: {
@@ -576,7 +611,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   onApplicationShutdown() {
-    this.logger.verbose('Shutting down workers...');
+    this.logger.debug('Shutting down workers...');
     this.workers.forEach((worker) => worker.close());
   }
 
@@ -621,9 +656,9 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   async joinSession(sessionId: string, roomId: string, userId: string) {
-    this.logger.verbose(`Attempting to add user: ${userId} to session: ${sessionId} in room: ${roomId}...`);
+    this.logger.debug(`Attempting to add user: ${userId} to session: ${sessionId} in room: ${roomId}...`);
     const isMember = await this.isUserARoomMember(userId, roomId);
-    if (!isMember) throw new ForbiddenException('You are not permitted to access this room');
+    if (!isMember) throw new ForbiddenException(ROOM_ACCESS_DENIED);
 
     const isSessionOwner = await this.isSessionOwner(sessionId, userId);
     const hasElevatedPrivileges = await this.userHasElevatedPrivileges(userId);
@@ -631,7 +666,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const transportId = computeTransportId(userId, sessionId);
     const [router, { iceParameters, iceCandidates, dtlsParameters, id }] = await this.assertWebRtcTransport(roomId, transportId);
     if (!router) throw new InternalServerErrorException('Unknown Error');
-    const rtpCapabilities = this.routers[roomId].rtpCapabilities;
+    const rtpCapabilities = router.rtpCapabilities;
     await this.sessionModel.findByIdAndUpdate(sessionId, {
       $set: {
         serverIp: ip,
@@ -640,11 +675,11 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
       }
     }).exec();
 
-    this.logger.verbose(`User: ${userId} has been added to ${isSessionOwner ? 'their own' : 'the'} session: ${sessionId} in room: ${roomId} successfully. Awaiting final connection to their WebRTC transport`);
+    this.logger.debug(`User: ${userId} has been added to ${isSessionOwner ? 'their own' : 'the'} session: ${sessionId} in room: ${roomId} successfully. Awaiting final connection to their WebRTC transport`);
     return { isSessionOwner, hasElevatedPrivileges, params: { rtpCapabilities, transportParams: { iceParameters, iceCandidates, dtlsParameters, id } } };
   }
 
-  async createProducer(sessionId: string, userId: string, rtpParameters: RtpParameters, kind: MediaKind) {
+  async createProducer(sessionId: string, userId: string, rtpParameters: RtpParameters, kind: MediaKind, roomId: string) {
     const transportId = computeTransportId(userId, sessionId);
     const transport = this.webRtcTransports[transportId];
     if (!transport) {
@@ -652,6 +687,8 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     }
 
     const producer = await transport.produce({ kind, rtpParameters });
+    producer.appData.sessionId = sessionId;
+    producer.appData.roomId = roomId;
     this.producers[producer.id] = producer;
     const sessionDoc = await this.sessionModel.findById(sessionId).exec();
     await sessionDoc.updateOne({
@@ -671,7 +708,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
           }
         });
       delete this.producers[producer.id];
-    })
+    });
 
     return { producerId: producer.id };
   }
@@ -681,7 +718,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const transport = this.webRtcTransports[transportId];
     if (!transport) throw new NotFoundException('No such transport exists: ' + transportId);
     return await transport.connect({ dtlsParameters })
-      .then(() => this.logger.verbose(`User: ${userId} has connected their WebRTC transport::${transport.id} on session: ${sessionId}`));
+      .then(() => this.logger.debug(`User: ${userId} has connected their WebRTC transport::${transport.id} on session: ${sessionId}`));
   }
 
   async assertSession(roomId: string, userId: string, clientIp: string, displayName: string, avatar?: string) {
@@ -690,9 +727,9 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
       roomId
     });
 
-    if (!memberDoc) throw new NotFoundException('You are not a member of this room');
-    if (memberDoc.isBanned) throw new ForbiddenException('You are forbidden to access this room');
-    if (memberDoc.pending) throw new PreconditionFailedException('Your invitation into this room has not yet been accepted');
+    if (!memberDoc || memberDoc.isBanned) throw new ForbiddenException(ROOM_ACCESS_DENIED);
+    // if (memberDoc.isBanned) throw new ForbiddenException('You are forbidden to access this room');
+    if (memberDoc.pending) throw new PreconditionFailedException();
 
     const staleDate = new Date(Date.now() - ONE_HOUR);
     let sessionDoc = await this.sessionModel.findOne({
@@ -715,8 +752,8 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     if (!sessionDoc) {
       const hasElevatedPrivileges = this.userHasElevatedPrivileges(memberDoc);
       if (!hasElevatedPrivileges) {
-        this.observer.emit(Events.AdmissionPending, { memberId: memberDoc._id.toString(), userId, displayName, avatar, roomId, clientIp });
-        this.logger.verbose(`User: ${userId} has attempted to join room: ${roomId} but does not have a recent session. Admission is pending`)
+        this.eventEmitter.emitAsync(Events.AdmissionPending, { memberId: memberDoc._id.toString(), userId, displayName, avatar, roomId, clientIp });
+        this.logger.debug(`User: ${userId} has attempted to join room: ${roomId} but does not have a recent session. Admission is pending`)
         throw new PreconditionFailedException('Please wait for either a moderator or the room owner to admit you into this session');
       }
       sessionDoc = await new this.sessionModel({
@@ -730,9 +767,9 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
         clientIp
       }).save();
 
-      this.logger.verbose(`Using new session: ${sessionDoc._id.toString()} for user: ${userId}`)
+      this.logger.debug(`Using new session: ${sessionDoc._id.toString()} for user: ${userId}`)
     } else {
-      this.logger.verbose(`Reusing session: ${sessionDoc._id.toString()} for user: ${userId}`);
+      this.logger.debug(`Reusing session: ${sessionDoc._id.toString()} for user: ${userId}`);
       await sessionDoc.updateOne({ $inc: { __v: 1 } }).exec();
     }
     await memberDoc.updateOne({ $inc: { __v: 1 }, $set: { activeSession: sessionDoc } }).exec();
@@ -768,5 +805,128 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
       this.routers[id] = router;
     }
     return router;
+  }
+
+  async assertPresentation(roomId: string, userId: string, displayName?: string) {
+    const member = await this.memberModel.findOne({
+      userId,
+      roomId,
+      isBanned: { $ne: true },
+      pending: { $ne: true }
+    });
+
+    if (!member) throw new ForbiddenException(ROOM_ACCESS_DENIED);
+    const { activeSession } = member;
+
+    const parentSession = await this.sessionModel.findById(activeSession);
+    if (!parentSession || !activeSession) {
+      this.logger.warn(`User: ${userId} has attempted to start a presentation in room: ${roomId} but had no active session`);
+      throw new ForbiddenException(MSG_OPERATION_NOT_ALLOWED);
+    }
+
+    const { displayName: sessionDisplayName } = parentSession;
+    const staleDate = new Date(Date.now() - 3_600_000);
+    let previousPresenter: string | undefined = undefined;
+    let presentation = await this.presentationModel.findOne({
+      updatedAt: { $gte: staleDate },
+      room: roomId,
+      endedAt: null
+    })
+      .sort({ updatedAt: -1 })
+      .populate('owner')
+      .exec();
+    if (presentation) {
+      previousPresenter = (presentation.owner as unknown as HydratedDocument<RoomMembership> | undefined)?.userId?.toString();
+      await presentation.set({
+        displayName: displayName ?? sessionDisplayName,
+        owner: member._id,
+        parentSession: parentSession._id
+      }).save();
+    } else {
+      presentation = await new this.presentationModel({
+        displayName: displayName ?? sessionDisplayName,
+        room: roomId,
+        owner: member._id,
+        parentSession: parentSession._id
+      }).save();
+    }
+
+    this.eventEmitter.emitAsync(presentation.__v > 0 ? Events.PresentationCreated : Events.PresentationUpdated, { previousPresenter, timestamp: presentation.updatedAt, presenter: userId, roomId, id: presentation._id.toString() });
+
+    return new Presentation(presentation.toObject());
+  }
+
+  async joinPresentation(userId: string, presentationId: string) {
+    const presentation = await this.presentationModel.findById(presentationId).populate('parentSession').exec();
+    if (!presentation) throw new NotFoundException(MSG_PRESENTATION_NOT_FOUND);
+
+    const memberDoc = await this.memberModel.exists({
+      pending: { $ne: true },
+      isBanned: { $ne: true },
+      userId,
+      roomId: presentation.room
+    }).exec();
+
+    if (!memberDoc) {
+      this.logger.warn(`User: ${userId} has attempted to join the presentation: ${presentationId}, but is not a member of the presentation's room: ${presentation.room.toString()}`);
+      throw new ForbiddenException(MSG_OPERATION_NOT_ALLOWED);
+    }
+
+    const parentSession = presentation.parentSession as unknown as HydratedDocument<RoomSession>;
+    if (!parentSession) {
+      this.logger.warn(`Presentation: ${presentationId} was attempted to start, but it's parent session could not be found`);
+      throw new ForbiddenException(MSG_OPERATION_NOT_ALLOWED);
+    }
+
+    const { room } = presentation;
+    const transportId = computeTransportId(userId, presentationId);
+    const [{ rtpCapabilities }, { id, iceCandidates, dtlsParameters, iceParameters }] = await this.assertWebRtcTransport(room.toString(), transportId);
+    const isOwner = parentSession.userId.toString() == userId;
+    return { rtpCapabilities, transportParams: { id, iceCandidates, dtlsParameters, iceParameters }, isOwner };
+  }
+
+  async findPresentation(id: string) {
+    const doc = await this.presentationModel.findById(id).exec();
+
+    if (!doc) throw new NotFoundException(MSG_PRESENTATION_NOT_FOUND);
+
+    return new Presentation(doc.toObject());
+  }
+
+  async endUserPresentations(userId: string, presentationId: string) {
+    const transportId = computeTransportId(userId, presentationId);
+    const transport = this.webRtcTransports[transportId];
+    if (transport) {
+      transport.close();
+    }
+
+    const presentation = await this.presentationModel.findByIdAndUpdate(presentationId, {
+      $currentDate: {
+        endedAt: 1
+      },
+      $inc: {
+        __v: 1
+      }
+    }).exec();
+
+    if (!presentation) {
+      this.logger.warn(`Could not end presentation: ${presentationId} because it does not exist`);
+      return;
+    }
+
+    this.eventEmitter.emitAsync(Events.PresentationClosed, { owner: userId, id: presentationId, roomId: presentation.room.toString() });
+  }
+
+  async findCurrentPresentation(room: string) {
+    const staleDate = new Date(Date.now() - 3_600_000); // 1 hour
+    const presentation = await this.presentationModel.findOne({
+      room,
+      updatedAt: { $gte: staleDate },
+      endedAt: null
+    }).exec();
+
+    if (!presentation) throw new NotFoundException(MSG_PRESENTATION_NOT_FOUND);
+
+    return new Presentation(presentation.toObject());
   }
 }

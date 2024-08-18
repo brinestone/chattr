@@ -63,6 +63,12 @@ export interface IRoom extends IEntity {
   image?: string;
 }
 
+export interface IPresentation extends IEntity {
+  displayName: string;
+  parentSession: string;
+  endedAt?: Date;
+}
+
 export interface ILoginRequest {
   email: string;
   password: string;
@@ -117,5 +123,12 @@ export enum Signaling {
   ToggleConsumer = 'TOGGLE_CONSUMER',
   StatsSubscribe = 'STATS_SUBSCRIBE',
   StatsUpdate = 'STATS_UPDATE',
-  StatsEnd = 'STATS_END'
+  StatsEnd = 'STATS_END',
+  SpeakingSessionChanged = 'SPEAKING_SESSION_CHANGED',
+  SessionUpdated = 'SESSION_UPDATED',
+  RoomUpdated = 'ROOM_UPDATED',
+  PresentationCreated = 'PRESENTATION_CREATED',
+  PresentationUpdated = 'PRESENTATION_UPDATED',
+  PresentationEnded = 'PRESENTATION_ENDED',
+  JoinPresentation = 'JOIN_PRESENTATION'
 }

@@ -1,5 +1,6 @@
 import { Signaling } from '@chattr/interfaces';
-import { Logger, OnApplicationBootstrap, UnprocessableEntityException, UseFilters, UseGuards } from '@nestjs/common';
+import { Logger, UnprocessableEntityException, UseFilters, UseGuards } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import {
   ConnectedSocket,
   MessageBody,
@@ -11,7 +12,7 @@ import {
   WsException
 } from '@nestjs/websockets';
 import { DtlsParameters, MediaKind, RtpCapabilities, RtpParameters } from 'mediasoup/node/lib/types';
-import { Subscription, fromEvent } from 'rxjs';
+import { Subscription } from 'rxjs';
 import { Server, Socket } from 'socket.io';
 import { Ctx } from '../decorators/extract-from-context.decorator';
 import { Roles } from '../decorators/room-role';
@@ -26,11 +27,15 @@ function getElevatedChannel(roomId: string) {
   return `elevated::${roomId}`;
 }
 
+function getPresenterChannel(roomId: string) {
+  return `presenters::${roomId}`;
+}
+
 @WebSocketGateway(undefined, { cors: true })
 @UseFilters(new WsExceptionFilter())
 @UseGuards(WsGuard)
-export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnApplicationBootstrap {
-  private readonly logger = new Logger(AppGateway.name);
+export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  private readonly logger = new Logger(RoomGateway.name);
   private readonly statsSubscriptions = new Map<string, Subscription>()
   @WebSocketServer() private server: Server;
   constructor(private roomService: RoomService) { }
@@ -44,10 +49,13 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnA
     if (roomId) {
       const owningSession = client.data['owningSession'];
       const userId: string = client.data['userId'];
+      const presenterChannel = getPresenterChannel(roomId);
       await this.roomService.closeSession(owningSession);
       await this.roomService.leaveSessions(userId, ...(client.data['sessions'] ?? []));
+      await this.roomService.endUserPresentations(userId, client.data['presentation']);
       client.to(roomId).emit(Signaling.SessionClosed, { sessionId: owningSession });
       client.leave(roomId);
+      client.leave(presenterChannel);
 
       if (this.roomService.isMemberInRoles(userId, roomId, 'moderator', 'owner')) {
         const elevatedChannel = getElevatedChannel(roomId);
@@ -57,11 +65,56 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnA
     this.logger.log(`${client.id} has disconnected.`);
   }
 
-  onApplicationBootstrap() {
-    fromEvent(this.roomService.observer, Events.AdmissionPending).subscribe(({ memberId, userId, displayName, avatar, roomId, clientIp }: { memberId: string, clientIp: string, userId: string, displayName: string, avatar?: string, roomId: string }) => {
-      const elevatedChannel = getElevatedChannel(roomId);
-      this.server.to(elevatedChannel).emit(Signaling.AdmissionPending, { userId, displayName, avatar, roomId, memberId, clientIp });
-    })
+  @OnEvent(Events.ActiveSessionChanged)
+  private onActiveSessionChanged({ roomId, sessionId }: { sessionId: string, roomId: string }) {
+    this.server.to(roomId).emit(Signaling.SpeakingSessionChanged, { sessionId });
+  }
+
+  @OnEvent(Events.AdmissionPending)
+  private onAdmissionPending({ memberId, userId, displayName, avatar, roomId, clientIp }: { memberId: string, clientIp: string, userId: string, displayName: string, avatar?: string, roomId: string }) {
+    const elevatedChannel = getElevatedChannel(roomId);
+    this.server.to(elevatedChannel).emit(Signaling.AdmissionPending, { userId, displayName, avatar, roomId, memberId, clientIp });
+  }
+
+  @OnEvent(Events.PresentationUpdated)
+  @OnEvent(Events.PresentationCreated)
+  private async onPresentationCreated({ previousPresenter, presenter, id, roomId, timestamp }: { previousPresenter?: string, timestamp: Date, roomId: string, presenter: string, id: string }) {
+    const roomSockets = await this.server.in(roomId).fetchSockets();
+    if (roomSockets.length == 0)
+      return;
+
+    const presenterChannel = getPresenterChannel(roomId);
+    const presenterSocket = roomSockets.find(({ data }) => data['userId'] == presenter);
+    const previousPresenterSocket = !previousPresenter ? undefined : roomSockets.find(({ data }) => data['userId'] == previousPresenter);
+    if (previousPresenterSocket)
+      previousPresenterSocket.leave(presenterChannel);
+    presenterSocket.join(presenterChannel);
+
+    this.server.to(roomId).except(presenterChannel).emit(Signaling.PresentationUpdated, { presentationId: id, roomId, timestamp });
+  }
+
+  @OnEvent(Events.PresentationClosed)
+  onPresentationClosed({ id, roomId }: { owner?: string, id: string, roomId: string }) {
+    this.server.to(roomId).emit(Signaling.PresentationEnded, { presentationId: id, roomId });
+  }
+
+  @SubscribeMessage(Signaling.JoinPresentation)
+  async onJoinPresentation(
+    @ConnectedSocket() socket: Socket,
+    @Ctx('user') { userId }: Principal,
+    @MessageBody() { id, roomId }: { id: string, roomId: string }
+  ) {
+    try {
+      const { isOwner, rtpCapabilities, transportParams } = await this.roomService.joinPresentation(userId, id);
+      if (isOwner) {
+        socket.to(roomId).emit(Signaling.PresentationCreated, id);
+        socket.data['presentation'] = id;
+        socket.join(getPresenterChannel(roomId));
+      }
+      return { rtpCapabilities, transportParams, isOwner };
+    } catch (err) {
+      throw new WsException(err);
+    }
   }
 
   @SubscribeMessage(Signaling.StatsSubscribe)
@@ -163,9 +216,9 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnA
     @MessageBody() { kind, rtpParameters, sessionId }: { sessionId: string, rtpParameters: RtpParameters, kind: MediaKind }
   ) {
     try {
-      const ans = await this.roomService.createProducer(sessionId, principal.userId, rtpParameters, kind)
-      this.logger.verbose(`User: ${principal.userId} has created a "${kind}" producer on their session: ${sessionId}. Signaling peers...`);
       const roomId = socket.data['roomId'];
+      const ans = await this.roomService.createProducer(sessionId, principal.userId, rtpParameters, kind, roomId);
+      this.logger.verbose(`User: ${principal.userId} has created a "${kind}" producer on their session: ${sessionId}. Signaling peers...`);
       socket.to(roomId).emit(Signaling.ProducerOpened, { sessionId, ...ans });
       return ans;
     } catch (err) {

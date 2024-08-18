@@ -1,5 +1,6 @@
 import { Global, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { JwtModule, JwtModuleOptions } from '@nestjs/jwt';
 import { MongooseModule, MongooseModuleOptions } from '@nestjs/mongoose';
 import { PassportModule } from '@nestjs/passport';
@@ -9,9 +10,9 @@ import { AuthController } from './controller/auth.controller';
 import { RoomController } from './controller/room.controller';
 import { InvitesController, UpdatesController } from './controller/updates.controller';
 import { UserController } from './controller/user.controller';
-import { AppGateway } from './gateways/app.gateway';
+import { RoomGateway } from './gateways/room.gateway';
 import { LoggerMiddleware } from './middleware/logger.middleware';
-import { Invite, InviteSchema, Notification, NotificationSchema, Room, RoomMemberSchema, RoomMembership, RoomSchema, RoomSession, RoomSessionSchema, Update, UpdateSchema, User, UserSchema } from './models';
+import { Invite, InviteSchema, Notification, NotificationSchema, Presentation, PresentationSchema, Room, RoomMemberSchema, RoomMembership, RoomSchema, RoomSession, RoomSessionSchema, Update, UpdateSchema, User, UserSchema } from './models';
 import { AuthService } from './services/auth.service';
 import { RoomService } from './services/room.service';
 import { UpdatesService } from './services/updates.service';
@@ -31,7 +32,8 @@ import { UserService } from './services/user.service';
           { name: Invite.name, schema: InviteSchema },
           { name: Notification.name, schema: NotificationSchema }
         ]
-      }
+      },
+      { name: Presentation.name, schema: PresentationSchema }
     ])
   ],
   exports: [
@@ -67,13 +69,14 @@ class DataModule { }
         } as MongooseModuleOptions);
       }
     }),
+    EventEmitterModule.forRoot(),
     DataModule
   ],
   controllers: [RoomController, UserController, InvitesController, AuthController, UpdatesController],
   providers: [
     RoomService,
     AuthService,
-    AppGateway,
+    RoomGateway,
     UpdatesService,
     JwtStrategy,
     LocalStrategy,

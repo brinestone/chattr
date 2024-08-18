@@ -1,6 +1,6 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { ICreateRoomInviteRequest, IRoom, IRoomSession, IUpdateInviteRequest, InviteInfo, Signaling } from '@chattr/interfaces';
+import { ICreateRoomInviteRequest, IPresentation, IRoom, IRoomSession, IUpdateInviteRequest, InviteInfo, Signaling } from '@chattr/interfaces';
 import { Store } from '@ngxs/store';
 import {
   DtlsParameters,
@@ -9,11 +9,14 @@ import {
   RtpParameters
 } from 'mediasoup-client/lib/types';
 import {
-  catchError
+  catchError,
+  defaultIfEmpty,
+  of,
+  throwError
 } from 'rxjs';
 import { Socket, io } from 'socket.io-client';
 import { environment } from '../../environments/environment.development';
-import { RemoteProducerClosed, RemoteProducerOpened, RemoteSessionClosed, RemoteSessionOpened, RoomError, StatsEnded, StatsUpdated, UpdateConnectionStatus } from '../actions';
+import { PresentationUpdated, RemoteProducerClosed, RemoteProducerOpened, RemoteSessionClosed, RemoteSessionOpened, RoomError, SpeakingSessionChanged, StatsEnded, StatsUpdated, UpdateConnectionStatus } from '../actions';
 import { parseHttpClientError } from '../util';
 
 export type RoomEvent<T = any> = {
@@ -36,6 +39,33 @@ export class RoomService {
   private readonly store = inject(Store);
   private socket?: Socket;
   private socketInit = false;
+
+  async startPresentation(id: string, roomId: string) {
+  }
+
+  getCurrentPresentation(roomId: string) {
+    return this.httpClient.get<IPresentation | undefined>(`${environment.backendOrigin}/rooms/${roomId}/presentations/current`).pipe(
+      catchError((err: HttpErrorResponse) => {
+        if (err.status == 404) {
+          return of(undefined);
+        }
+        return throwError(() => err);
+      }),
+      catchError(parseHttpClientError)
+    )
+  }
+
+  findPresentation(id: string) {
+    return this.httpClient.get<IPresentation>(`${environment.backendOrigin}/rooms/presentations/${id}`).pipe(
+      catchError(parseHttpClientError)
+    )
+  }
+
+  createPresentation(roomId: string) {
+    return this.httpClient.put<IPresentation>(`${environment.backendOrigin}/rooms/${roomId}/present`, {}).pipe(
+      catchError(parseHttpClientError)
+    );
+  }
 
   async toggleConsumer(consumerId: string) {
     this.assertSocket();
@@ -137,6 +167,7 @@ export class RoomService {
   establishConnection(roomId: string, authToken?: string) {
     if (!this.socketInit) {
       this.socket = io(`${environment.backendOrigin}/`, {
+        autoConnect: false,
         transports: ['websocket'],
         auth: {
           authorization: authToken
@@ -144,15 +175,16 @@ export class RoomService {
       });
       this.socketInit = true;
 
+      this.socket.on('error', (x, y, z) => console.log(x, y, z))
+
       this.socket.on('connect', () => {
-        console.log('Recovered?', this.socket?.recovered);
         this.store.dispatch(new UpdateConnectionStatus('connected'));
         this.subscribeToMessages();
       });
 
-      this.socket.on('reconnect', () => {
-        this.store.dispatch(new UpdateConnectionStatus('reconnecting'));
-      });
+      // this.socket.on('reconnect', () => {
+      //   this.store.dispatch(new UpdateConnectionStatus('reconnecting'));
+      // });
 
       this.socket.on('disconnect', (reason) => {
         this.store.dispatch(new UpdateConnectionStatus('disconnected', reason));
@@ -161,6 +193,7 @@ export class RoomService {
       this.socket.on('errors', ({ errorMessage }: { errorMessage: string }) => {
         this.store.dispatch(new RoomError(errorMessage, roomId));
       });
+      this.socket.connect();
     } else if (!this.socket?.connected) {
       this.socket?.connect();
     }
@@ -191,6 +224,18 @@ export class RoomService {
 
     socket.on(Signaling.StatsUpdate, ({ id, update, type }: { id: string, update: any, type: 'producer' | 'consumer' }) => {
       this.store.dispatch(new StatsUpdated(id, update, type));
+    });
+
+    socket.on(Signaling.SpeakingSessionChanged, ({ sessionId }: { sessionId: string }) => {
+      this.store.dispatch(new SpeakingSessionChanged(sessionId));
+    });
+
+    socket.on(Signaling.PresentationCreated, ({ presentationId, timestamp }: { timestamp: string, presentationId: string }) => {
+      this.store.dispatch(new PresentationUpdated(presentationId, new Date(timestamp)));
+    });
+
+    socket.on(Signaling.PresentationUpdated, ({ presentationId: id, timestamp }: { timestamp: string, presentationId: string }) => {
+      this.store.dispatch(new PresentationUpdated(id, new Date(timestamp)));
     });
   }
 

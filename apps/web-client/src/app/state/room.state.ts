@@ -1,9 +1,9 @@
 import { Injectable, inject } from '@angular/core';
-import { ConnectionStatus, IRoom, IRoomSession } from '@chattr/interfaces';
+import { ConnectionStatus, IPresentation, IRoom, IRoomSession } from '@chattr/interfaces';
 import { Action, Actions, NgxsOnInit, State, StateContext, ofActionErrored, select } from '@ngxs/store';
 import { append, iif, patch, removeItem } from '@ngxs/store/operators';
 import { EMPTY, filter, forkJoin, from, mergeMap, of, switchMap, tap, throwError } from 'rxjs';
-import { ClearConnectedRoom, CloseServerSideConsumer, CloseServerSideProducer, ConnectToRoom, ConnectTransport, ConnectedRoomChanged, StatsSubscribe, ConsumerStreamToggled, CreateInviteLink, CreateRoom, CreateServerSideConsumer, CreateServerSideProducer, InvitationInfoLoaded, JoinSession, LeaveSession, LoadInvitationInfo, LoadRooms, RemoteSessionClosed, RemoteSessionOpened, RoomError, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, ToggleConsumerStream, TransportConnected, UpdateConnectionStatus, UpdateInvite } from '../actions';
+import { ClearConnectedRoom, CloseServerSideConsumer, CloseServerSideProducer, ConnectToRoom, ConnectTransport, ConnectedRoomChanged, StatsSubscribe, ConsumerStreamToggled, CreateInviteLink, CreateRoom, CreateServerSideConsumer, CreateServerSideProducer, InvitationInfoLoaded, JoinSession, LeaveSession, LoadInvitationInfo, LoadRooms, RemoteSessionClosed, RemoteSessionOpened, RoomError, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, ToggleConsumerStream, TransportConnected, UpdateConnectionStatus, UpdateInvite, CreatePresentation, PresentationUpdated } from '../actions';
 import { RoomService } from '../services/room.service';
 import { Selectors } from './selectors';
 
@@ -13,6 +13,7 @@ export type ConnectedRoom = {
   inviteLink?: string;
   otherSessions: IRoomSession[];
   connectionStatus: ConnectionStatus;
+  presentation?: IPresentation;
 }
 
 export type RoomStateModel = {
@@ -37,6 +38,32 @@ export class RoomState implements NgxsOnInit {
 
   ngxsOnInit(ctx: Context): void {
     ctx.dispatch(ClearConnectedRoom);
+  }
+
+  @Action(PresentationUpdated)
+  fetchPresentationInfoOnCreated(ctx: Context, { id, timestamp }: PresentationUpdated) {
+    const connectedRoom = ctx.getState().connectedRoom;
+    if (!connectedRoom) return throwError(() => NO_ROOM_CONNECTED_ERROR);
+
+    if (connectedRoom.presentation) {
+      const previousoUpdateTimestamp = new Date(connectedRoom.presentation.updatedAt);
+      const currentTimestamp = timestamp;
+      if (connectedRoom.presentation?.id == id && previousoUpdateTimestamp.valueOf() == currentTimestamp.valueOf()) return EMPTY;
+    }
+    return this.roomService.findPresentation(id).pipe(
+      tap(presentation => ctx.setState(patch({ connectedRoom: patch({ presentation }) })))
+    )
+  }
+
+  @Action(CreatePresentation, { cancelUncompleted: true })
+  onCreatePresentation(ctx: Context) {
+    const connectedRoom = ctx.getState().connectedRoom;
+    if (!connectedRoom) return throwError(() => NO_ROOM_CONNECTED_ERROR);
+
+    return this.roomService.createPresentation(connectedRoom.info.id).pipe(
+      tap(presentation => ctx.setState(patch({ connectedRoom: patch({ presentation }) }))),
+      tap(({ id, updatedAt }) => ctx.dispatch(new PresentationUpdated(id, updatedAt)))
+    );
   }
 
   @Action(StatsSubscribe)
@@ -213,7 +240,8 @@ export class RoomState implements NgxsOnInit {
           info: of(room),
           connectionStatus: of('idle' as ConnectionStatus),
           session: this.roomService.assertRoomSession(room.id),
-          otherSessions: this.roomService.getConnectableSessions(room.id)
+          otherSessions: this.roomService.getConnectableSessions(room.id),
+          presentation: this.roomService.getCurrentPresentation(room.id)
         })
       }),
       tap(connectedRoom => ctx.setState(patch({

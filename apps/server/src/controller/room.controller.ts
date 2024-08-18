@@ -1,5 +1,5 @@
 import { CreateInviteRequest } from '@chattr/dto';
-import { Body, ClassSerializerInterceptor, Controller, Get, Ip, Param, Post, UseGuards, UseInterceptors, ValidationPipe } from '@nestjs/common';
+import { Body, ClassSerializerInterceptor, Controller, Get, Ip, Param, Post, Put, UseGuards, UseInterceptors, ValidationPipe } from '@nestjs/common';
 import { Ctx } from '../decorators/extract-from-context.decorator';
 import { JwtGuard } from '../guards/jwt.guard';
 import { Principal } from '../models';
@@ -10,6 +10,31 @@ import { UserService } from '../services/user.service';
 @UseGuards(JwtGuard)
 export class RoomController {
   constructor(private roomService: RoomService, private userService: UserService) { }
+
+  @Get(':roomId/presentations/current')
+  @UseInterceptors(ClassSerializerInterceptor)
+  async getCurrentPresentation(
+    @Param('roomId') roomId: string
+  ) {
+    return await this.roomService.findCurrentPresentation(roomId);
+  }
+
+  @Get('presentations/:presentationId')
+  @UseInterceptors(ClassSerializerInterceptor)
+  async getPresentation(
+    @Param('presentationId') presentationId: string
+  ) {
+    return await this.roomService.findPresentation(presentationId);
+  }
+
+  @Put(':roomId/present')
+  @UseInterceptors(ClassSerializerInterceptor)
+  async startPresentation(
+    @Ctx('user') { userId }: Principal,
+    @Param('roomId') roomId: string
+  ) {
+    return await this.roomService.assertPresentation(roomId, userId)
+  }
 
   @Post('invite')
   async createInvite(
