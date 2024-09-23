@@ -1,9 +1,9 @@
 import { IRoom, IRoomSession } from "@chattr/interfaces";
-import { Selector, createPickSelector, createPropertySelectors } from "@ngxs/store";
+import { Selector, createPropertySelectors } from "@ngxs/store";
+import { JwtPayload, jwtDecode } from "jwt-decode";
 import { DeviceConfig, DeviceState, DeviceStateModel } from "./devices.state";
 import { ConnectedRoom, RoomState, RoomStateModel } from "./room.state";
 import { UserState, UserStateModel } from "./user.state";
-import { JwtPayload, jwtDecode } from "jwt-decode";
 
 export class Selectors {
     private static userSlices = createPropertySelectors<UserStateModel>(UserState);
@@ -11,8 +11,13 @@ export class Selectors {
     private static deviceSlices = createPropertySelectors<DeviceStateModel>(DeviceState);
 
     @Selector([Selectors.roomSlices.connectedRoom])
+    static isPresentationOwner(connectedRoom?: ConnectedRoom) {
+        return connectedRoom?.presentation?.isOwner ?? false;
+    }
+
+    @Selector([Selectors.roomSlices.connectedRoom])
     static currentPresentation(connectedRoom?: ConnectedRoom) {
-        return connectedRoom?.presentation;
+        return connectedRoom?.presentation?.meta;
     }
 
     @Selector([Selectors.roomSlices.connectedRoom])

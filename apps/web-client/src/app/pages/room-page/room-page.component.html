@@ -1,12 +1,17 @@
 @defer (when initConnection) {
-@if (presentation()) {
+@let p = presentation();
+@if (p) {
 <div class="w-full h-full grid grid-rows-[1fr_auto]">
   <div class="border border-x-0 border-t-0 border-[var(--surface-border)] border-solid">
     <chattr-room-presentation />
   </div>
   <div
-    class="max-h-[300px] h-[5vmin] overflow-auto no-scrollbar border border-x-0 border-t-0 border-[var(--surface-border)] bg-[var(--surface-ground)] border-solid">
-    spectators
+    class="max-h-[300px] h-[5vmin] overflow-auto flex items-center justify-center no-scrollbar border border-x-0 border-t-0 border-[var(--surface-border)] bg-[var(--surface-ground)] border-solid">
+    <div class="flex flex-wrap gap-4 justify-center items-center">
+      @for(spectator of sessions();track spectator.id) {
+      <chattr-room-presentation-spectator />
+      }
+    </div>
   </div>
 </div>
 }
@@ -33,8 +38,9 @@
     <p-button [disabled]="!videoDeviceSet()" (onClick)="onToggleVideoButtonClicked()" tooltipPosition="top"
       [pTooltip]="videoDeviceSet() ? 'Toggle Video' : 'No camera configured'" icon="pi pi-video"
       [outlined]="videoDisabled()" [rounded]="true" />
-    <p-button (onClick)="onPresentScreenButtonClicked()" tooltipPosition="top" pTooltip="Present Screen"
-      icon="pi pi-desktop" [outlined]="true" [rounded]="true" />
+    <p-button (onClick)="onPresentScreenButtonClicked()" tooltipPosition="top"
+      [pTooltip]="canPublishInSession() && !!presentation() ? 'Stop Presenting' : 'Present Screen'" icon="pi pi-desktop"
+      [outlined]="!canPublishInSession()" [rounded]="true" />
     <p-divider layout="vertical" />
     <p-button tooltipPosition="top" pTooltip="Disconnect" icon="pi pi-times" severity="danger" [rounded]="true" />
   </div>

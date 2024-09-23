@@ -82,8 +82,8 @@ export class SessionJoined {
   constructor(readonly transportParams: TransportOptions, readonly rtpCapabilities: RtpCapabilities, readonly sessionId: string) { }
 }
 
-export class ConnectTransport {
-  static type = '[Room] Connect Transport';
+export class ConnetSessionTransport {
+  static type = '[Room] Connect Session Transport';
   constructor(readonly sessionId: string, readonly dtlsParameters: DtlsParameters) { }
 }
 
@@ -219,4 +219,49 @@ export class CreatePresentation {
 export class PresentationUpdated {
   static type = '[Room] Presentation Updated';
   constructor(readonly id: string, readonly timestamp: Date) { }
+}
+
+export class JoinPresentation {
+  static type = '[Room] Join Presentation';
+  constructor(readonly id: string) { }
+}
+
+export class PresentationJoined {
+  static type = '[Room] Presentation Joined';
+  constructor(readonly id: string, readonly transportParams: TransportOptions, readonly rtpCapabilities: RtpCapabilities) { }
+}
+
+export class ConnectPresentationTransport {
+  static type = '[Room] Connect Presentation Transport';
+  constructor(readonly presentationId: string, readonly dtlsParameters: DtlsParameters) { }
+}
+
+export class PresentationTransportConnected {
+  static type = '[Room] Presentation Transport Connected';
+  constructor(readonly presentationId: string) { }
+}
+
+export class CreatePresentationProducer {
+  static type = '[Room] Create Presentation Producer';
+  constructor(readonly presentationId: string, readonly rtpParameters: RtpParameters) { }
+}
+
+export class PresentationProducerCreated {
+  static type = '[Room] Presentation Producer Created';
+  constructor(readonly presentationId: string, readonly producerId: string) { }
+}
+
+export class PresentationStarted {
+  static type = '[Room] Presentation Started';
+  constructor(readonly id: string, readonly producerId: string) { }
+}
+
+export class CreatePresentationConsumer {
+  static type = '[Room] Create Server-side Presentation Consumer';
+  constructor(readonly producerId: string, readonly presentationId: string, readonly rtpCapabilities: RtpCapabilities) { }
+}
+
+export class PresentationConsumerCreated {
+  static type = '[Room] Presentation Consumer Created';
+  constructor(readonly presentationId: string, readonly producerId: string, readonly rtpParameters: RtpParameters, readonly id: string) { }
 }

@@ -28,6 +28,7 @@ import { RoomMemberComponent } from '../../components/room-member/room-member.co
 import { Selectors } from '../../state/selectors';
 import { errorToMessage } from '../../util';
 import { RoomPresentationComponent } from '../../components/room-presentation/room-presentation.component';
+import { RoomPresentationSpectatorComponent } from '../../components/room-presentation-spectator/room-presentation-spectator.component';
 @Component({
   selector: 'chattr-room-page',
   standalone: true,
@@ -48,7 +49,8 @@ import { RoomPresentationComponent } from '../../components/room-presentation/ro
     BadgeModule,
     SkeletonModule,
     DialogModule,
-    ReactiveFormsModule
+    ReactiveFormsModule,
+    RoomPresentationSpectatorComponent
   ],
   templateUrl: './room-page.component.html',
   styleUrl: './room-page.component.scss',
@@ -112,6 +114,8 @@ export class RoomPageComponent {
   readonly audioDeviceSet = computed(() => !!this.preferredAudioDevice());
   readonly videoDeviceSet = computed(() => !!this.preferredVideoDevice());
   readonly presentation = select(Selectors.currentPresentation);
+  readonly publishSession = select(Selectors.producibleSession);
+  readonly canPublishInSession = select(Selectors.isPresentationOwner);
   showDevicesConfigSidebar = false;
   showInviteDialog = false;
   initConnection = false;
@@ -242,7 +246,6 @@ export class RoomPageComponent {
 
   onInviteDialogOpened() {
     const redirectPath = this.router.createUrlTree(['../../invite/ack'], { relativeTo: this.activatedRoute }).toString();
-    console.log(redirectPath);
     this.gettingShareLink.set(true);
     this.createInviteLinkFn(redirectPath, 'code').subscribe({
       error: () => this.gettingShareLink.set(false),

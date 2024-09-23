@@ -23,7 +23,7 @@ import { cpus, networkInterfaces } from 'os';
 import {
   EMPTY,
   concatMap,
-  filter,
+  first,
   forkJoin,
   from,
   fromEvent,
@@ -32,8 +32,7 @@ import {
   last,
   mergeMap,
   of,
-  switchMap,
-  take
+  switchMap
 } from 'rxjs';
 import { Events } from '../events';
 import { Presentation, Room, RoomMembership, RoomSession, User } from '../models';
@@ -73,7 +72,7 @@ function generateUniqueCode(...tokens: string[]) {
   return cipher.digest('hex').toLowerCase();
 }
 
-function computeTransportId(userId: string, sessionId: string) {
+function computeTransportTrackingId(userId: string, sessionId: string) {
   return generateUniqueCode(userId, sessionId);
 }
 
@@ -105,6 +104,82 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     return this.workers[++this.nextWorkerIndex % this.workers.length];
   }
 
+  async createPresentationConsumer(presentationId: string, userId: string, producerId: string, rtpCapabilities: RtpCapabilities) {
+    const transportId = computeTransportTrackingId(userId, presentationId);
+    const transport = this.webRtcTransports[transportId];
+    if (!transport) {
+      throw new Error('Transport not found or closed');
+    }
+
+    const presentation = await this.presentationModel.findById(presentationId).exec();
+    if (!presentation) throw new NotFoundException(MSG_PRESENTATION_NOT_FOUND);
+
+    const router = this.routers[presentation.room.toString()];
+    if (!router.canConsume({ producerId, rtpCapabilities })) throw new Error('Unable to consume presentation');
+
+    const consumer = await transport.consume({ producerId, rtpCapabilities, paused: true });
+    this.consumers[consumer.id] = consumer;
+    return { id: consumer.id, rtpParameters: consumer.rtpParameters };
+  }
+
+  async createPresentationProducer(presentationId: string, userId: string, rtpParameters: RtpParameters) {
+    const transportId = computeTransportTrackingId(userId, presentationId);
+    const transport = this.webRtcTransports[transportId];
+    if (!transport) {
+      throw new Error('Transport not found or closed');
+    }
+
+    const presentation = await this.presentationModel.findById(presentationId).exec();
+    if (!presentation) throw new NotFoundException(MSG_PRESENTATION_NOT_FOUND);
+
+    const producer = await transport.produce({ kind: 'video', rtpParameters });
+    producer.appData.presentationId = presentationId;
+    producer.appData.roomId = presentation.room.toString();
+    this.producers[producer.id] = producer;
+    const sessionDoc = await this.sessionModel.findById(presentation.parentSession).exec();
+    await sessionDoc.updateOne({
+      $inc: { __v: 1 },
+      $push: {
+        producers: producer.id
+      }
+    }).exec();
+
+    producer.observer.on('close', async () => {
+      const index = sessionDoc.producers.findIndex(x => x == producer.id);
+      if (index >= 0)
+        await sessionDoc.updateOne({
+          $inc: { __v: 1 },
+          $set: {
+            producers: sessionDoc.producers.filter(x => x != producer.id)
+          }
+        });
+      delete this.producers[producer.id];
+    });
+
+    return { producerId: producer.id };
+  }
+
+  async connectPresentationTransport(presentationId: string, dtlsParameters: DtlsParameters, userId: string) {
+    const transportTrackingId = computeTransportTrackingId(userId, presentationId);
+    const transport = this.webRtcTransports[transportTrackingId];
+    if (!transport) throw new NotFoundException(`No such transport: ${transportTrackingId} exists`);
+
+    const presentation = await this.presentationModel.findById(presentationId).exec();
+    if (!presentation) throw new NotFoundException(MSG_PRESENTATION_NOT_FOUND);
+
+    this.sessionModel.findByIdAndUpdate(presentation.parentSession, {
+      $inc: {
+        __v: 1
+      },
+      $set: {
+        connected: true
+      }
+    }).exec();
+
+    return await transport.connect({ dtlsParameters })
+      .then(() => this.logger.debug(`User: ${userId} has connected their WebRTC transport::${transport.id} on presentation: ${presentationId}`));
+  }
+
   observeStats(type: 'producer' | 'consumer', id: string) {
     const target: Producer | Consumer = type == 'producer' ? this.producers[id] : this.consumers[id];
     if (!target) {
@@ -125,7 +200,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const now = new Date();
 
     for (const sessionId of sessionIds) {
-      const transportId = computeTransportId(userId, sessionId);
+      const transportId = computeTransportTrackingId(userId, sessionId);
       const transport = this.webRtcTransports[transportId];
       transport?.close();
       delete this.webRtcTransports[transportId];
@@ -257,7 +332,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     this.logger.debug(`Closing session: ${id}`);
     const sessionDoc = await this.sessionModel.findById(id);
     const memberDoc = await this.memberModel.findById(sessionDoc.member);
-    const transportId = computeTransportId(sessionDoc.userId, id);
+    const transportId = computeTransportTrackingId(sessionDoc.userId, id);
     const transport = this.webRtcTransports[transportId];
     transport?.close();
     delete this.webRtcTransports[transportId];
@@ -275,7 +350,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   async createConsumer(sessionId: string, userId: string, producerId: string, rtpCapabilities: RtpCapabilities) {
-    const transportId = computeTransportId(userId, sessionId);
+    const transportId = computeTransportTrackingId(userId, sessionId);
     const transport = this.webRtcTransports[transportId];
     if (!transport) throw new NotFoundException('Transport not found');
 
@@ -310,7 +385,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     }).exec();
 
     const ans = sessions.filter(sessionDoc => {
-      const sessionTransportId = computeTransportId(sessionDoc.userId, sessionDoc._id.toString());
+      const sessionTransportId = computeTransportTrackingId(sessionDoc.userId, sessionDoc._id.toString());
       const sessionTransport = this.webRtcTransports[sessionTransportId];
       if (sessionTransport?.closed === false) return true;
       this.memberModel.updateOne({ _id: sessionDoc.member }, {
@@ -525,8 +600,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     this.logger.debug('Resolving IP address...');
     from(Object.values(networkInterfaces())).pipe(
       mergeMap(identity),
-      filter(({ family, internal }) => family == 'IPv4' && !internal),
-      take(1)
+      first(({ family, internal }) => family == 'IPv4' && !internal),
     ).subscribe(({ address }) => {
       ip = address;
       this.logger.log(`IP Address resolved to: ${ip}`);
@@ -627,6 +701,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const producer = this.producers[producerId];
     if (!producer) {
       this.logger.warn('Producer::' + producerId + ' not found or already closed');
+      return;
     }
 
     producer.close();
@@ -663,7 +738,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const isSessionOwner = await this.isSessionOwner(sessionId, userId);
     const hasElevatedPrivileges = await this.userHasElevatedPrivileges(userId);
 
-    const transportId = computeTransportId(userId, sessionId);
+    const transportId = computeTransportTrackingId(userId, sessionId);
     const [router, { iceParameters, iceCandidates, dtlsParameters, id }] = await this.assertWebRtcTransport(roomId, transportId);
     if (!router) throw new InternalServerErrorException('Unknown Error');
     const rtpCapabilities = router.rtpCapabilities;
@@ -679,8 +754,8 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     return { isSessionOwner, hasElevatedPrivileges, params: { rtpCapabilities, transportParams: { iceParameters, iceCandidates, dtlsParameters, id } } };
   }
 
-  async createProducer(sessionId: string, userId: string, rtpParameters: RtpParameters, kind: MediaKind, roomId: string) {
-    const transportId = computeTransportId(userId, sessionId);
+  async createSessionProducer(sessionId: string, userId: string, rtpParameters: RtpParameters, kind: MediaKind, roomId: string) {
+    const transportId = computeTransportTrackingId(userId, sessionId);
     const transport = this.webRtcTransports[transportId];
     if (!transport) {
       throw new Error('Transport not found or closed');
@@ -713,8 +788,8 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     return { producerId: producer.id };
   }
 
-  async connectTransport(sessionId: string, dtlsParameters: DtlsParameters, userId: string) {
-    const transportId = computeTransportId(userId, sessionId);
+  async connectSessionTransport(sessionId: string, dtlsParameters: DtlsParameters, userId: string) {
+    const transportId = computeTransportTrackingId(userId, sessionId);
     const transport = this.webRtcTransports[transportId];
     if (!transport) throw new NotFoundException('No such transport exists: ' + transportId);
     return await transport.connect({ dtlsParameters })
@@ -830,7 +905,10 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     let presentation = await this.presentationModel.findOne({
       updatedAt: { $gte: staleDate },
       room: roomId,
-      endedAt: null
+      endedAt: null,
+      $or: [
+        { parentSession: parentSession._id }
+      ]
     })
       .sort({ updatedAt: -1 })
       .populate('owner')
@@ -879,7 +957,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     }
 
     const { room } = presentation;
-    const transportId = computeTransportId(userId, presentationId);
+    const transportId = computeTransportTrackingId(userId, presentationId);
     const [{ rtpCapabilities }, { id, iceCandidates, dtlsParameters, iceParameters }] = await this.assertWebRtcTransport(room.toString(), transportId);
     const isOwner = parentSession.userId.toString() == userId;
     return { rtpCapabilities, transportParams: { id, iceCandidates, dtlsParameters, iceParameters }, isOwner };
@@ -894,7 +972,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   async endUserPresentations(userId: string, presentationId: string) {
-    const transportId = computeTransportId(userId, presentationId);
+    const transportId = computeTransportTrackingId(userId, presentationId);
     const transport = this.webRtcTransports[transportId];
     if (transport) {
       transport.close();
@@ -908,6 +986,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
         __v: 1
       }
     }).exec();
+    console.log(presentation);
 
     if (!presentation) {
       this.logger.warn(`Could not end presentation: ${presentationId} because it does not exist`);

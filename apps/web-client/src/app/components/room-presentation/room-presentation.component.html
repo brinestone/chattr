@@ -1,1 +1,8 @@
-<p>room-presentation works!</p>
+@defer (when !!presentationStream()) {
+<video [srcObject]="presentationStream()" class="w-full h-full" autoplay></video>
+}@placeholder {
+<div class="w-full h-full justify-center flex items-center bg-black bg-opacity-80 gap-3">
+    <p-progressSpinner animationDuration=".5s" styleClass="w-[2.5rem] h-[2.5rem]" strokeWidth="4" />
+    <p class="text-2xl text-white"> Waiting for presentation to start...</p>
+</div>
+}

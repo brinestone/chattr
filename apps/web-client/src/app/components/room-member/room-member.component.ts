@@ -11,7 +11,7 @@ import { Producer, TransportOptions } from 'mediasoup-client/lib/types';
 import { AvatarModule } from 'primeng/avatar';
 import { CardModule } from 'primeng/card';
 import { filter, fromEvent, map, take, takeUntil } from 'rxjs';
-import { CloseServerSideConsumer, CloseServerSideProducer, ConnectTransport, ConsumerStreamToggled, CreateServerSideConsumer, CreateServerSideProducer, JoinSession, LeaveSession, RemoteProducerClosed, RemoteProducerOpened, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, SpeakingSessionChanged, ToggleConsumerStream, TransportConnected } from '../../actions';
+import { CloseServerSideConsumer, CloseServerSideProducer, ConnetSessionTransport, ConsumerStreamToggled, CreateServerSideConsumer, CreateServerSideProducer, JoinSession, LeaveSession, RemoteProducerClosed, RemoteProducerOpened, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, SpeakingSessionChanged, ToggleConsumerStream, TransportConnected } from '../../actions';
 import { Selectors } from '../../state/selectors';
 
 const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color').substring(1);
@@ -44,7 +44,7 @@ export class RoomMemberComponent implements OnDestroy {
   private readonly producibleSession = select(Selectors.producibleSession);
   private readonly connectionStatus = select(Selectors.connectionStatus);
   private readonly joinSessionFn = dispatch(JoinSession);
-  private readonly transportConnectFn = dispatch(ConnectTransport);
+  private readonly transportConnectFn = dispatch(ConnetSessionTransport);
   private readonly consumerToggleFn = dispatch(ToggleConsumerStream);
   private readonly producerCloseFn = dispatch(CloseServerSideProducer);
   private readonly closeConsumerFn = dispatch(CloseServerSideConsumer);
@@ -134,11 +134,9 @@ export class RoomMemberComponent implements OnDestroy {
       if (status === 'connected')
         this.joinSessionFn(this.session().id);
     });
-    effect(() => console.log(this.activeSpeaking()))
   }
 
   private startConsuming() {
-    console.log('Started consuming media on session: ' + this.session().id);
     for (const producerId of this.session().producers) {
       this.consumeProducerMedia(producerId);
     }
@@ -235,7 +233,6 @@ export class RoomMemberComponent implements OnDestroy {
   private startPublishing() {
     effect(async () => {
       if (!this.transport) return;
-      console.log('Device config changed. Updating session stream');
       const audioDevice = this.preferredAudioDevice();
       const videoDevice = this.preferredVideoDevice();
       const videoMuted = this.isVideoMuted();
@@ -295,7 +292,6 @@ export class RoomMemberComponent implements OnDestroy {
         if (currentStream && this.canPublish()) {
           const audioTrack = currentStream.getAudioTracks()[0];
           if (audioTrack) {
-            console.log('Removing audio track from publishing session');
             currentStream.removeTrack(audioTrack);
           }
         }
@@ -339,8 +335,6 @@ export class RoomMemberComponent implements OnDestroy {
           callback();
         }
       });
-      if (this.transport?.connectionState != 'new')
-        console.log(this.transport?.connectionState);
       this.transportConnectFn(this.session().id, dtlsParameters);
     });
   }

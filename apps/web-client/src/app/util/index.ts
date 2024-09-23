@@ -1,7 +1,22 @@
 import { HttpErrorResponse } from "@angular/common/http";
+import { Signal, effect, signal } from "@angular/core";
 import { ActionCompletion, ActionType, Actions, ofActionCompleted, ofActionDispatched } from "@ngxs/store";
 import { Message } from "primeng/api";
 import { ObservableInput, identity, map, merge, mergeMap, throwError } from "rxjs";
+
+export function signalDebounce<T>(refSignal: Signal<T>, timeOutMs = 0): Signal<T> {
+    const debounceSignal = signal(refSignal());
+    effect(() => {
+        const value = refSignal();
+        const timeout = setTimeout(() => {
+            debounceSignal.set(value);
+        }, timeOutMs);
+        return () => {
+            clearTimeout(timeout);
+        };
+    });
+    return debounceSignal;
+}
 
 export function extractInitials(text?: string) {
     if (!text) return '';

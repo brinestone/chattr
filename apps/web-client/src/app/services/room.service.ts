@@ -10,16 +10,19 @@ import {
 } from 'mediasoup-client/lib/types';
 import {
   catchError,
-  defaultIfEmpty,
+  debounceTime,
+  fromEvent,
+  map,
   of,
+  takeUntil,
   throwError
 } from 'rxjs';
 import { Socket, io } from 'socket.io-client';
 import { environment } from '../../environments/environment.development';
-import { PresentationUpdated, RemoteProducerClosed, RemoteProducerOpened, RemoteSessionClosed, RemoteSessionOpened, RoomError, SpeakingSessionChanged, StatsEnded, StatsUpdated, UpdateConnectionStatus } from '../actions';
+import { PresentationStarted, PresentationUpdated, RemoteProducerClosed, RemoteProducerOpened, RemoteSessionClosed, RemoteSessionOpened, RoomError, SpeakingSessionChanged, StatsEnded, StatsUpdated, UpdateConnectionStatus } from '../actions';
 import { parseHttpClientError } from '../util';
 
-export type RoomEvent<T = any> = {
+export type RoomEvent<T = unknown> = {
   event: 'error' | 'message';
   data?: T;
 };
@@ -40,13 +43,30 @@ export class RoomService {
   private socket?: Socket;
   private socketInit = false;
 
-  async startPresentation(id: string, roomId: string) {
+  async createPresentationConsmer(id: string, producerId: string, rtpCapabilities: RtpCapabilities) {
+    if (!this.socket) return;
+    return await this.socket.emitWithAck(Signaling.CreatePresentationConsumer, { presentationId: id, producerId, rtpCapabilities })
+  }
+
+  async createPresentationProducer(id: string, rtpParameters: RtpParameters) {
+    if (!this.socket) return;
+    return await this.socket.emitWithAck(Signaling.CreatePresentationProducer, { presentationId: id, rtpParameters });
+  }
+
+  async connectPresentationTransport(id: string, dtlsParameters: DtlsParameters) {
+    if (!this.socket) return;
+    return await this.socket.emitWithAck(Signaling.ConnectPresentationTransport, { presentationId: id, dtlsParameters });
+  }
+
+  async joinPresentation(id: string, roomId: string) {
+    if (!this.socket) return;
+    return await this.socket.emitWithAck(Signaling.JoinPresentation, { id, roomId });
   }
 
   getCurrentPresentation(roomId: string) {
     return this.httpClient.get<IPresentation | undefined>(`${environment.backendOrigin}/rooms/${roomId}/presentations/current`).pipe(
-      catchError((err: HttpErrorResponse) => {
-        if (err.status == 404) {
+      catchError((err: Error) => {
+        if (err instanceof HttpErrorResponse && err.status == 404) {
           return of(undefined);
         }
         return throwError(() => err);
@@ -68,8 +88,8 @@ export class RoomService {
   }
 
   async toggleConsumer(consumerId: string) {
-    this.assertSocket();
-    return await this.socket!.emitWithAck(Signaling.ToggleConsumer, { consumerId });
+    if (!this.socket) return;
+    return await this.socket.emitWithAck(Signaling.ToggleConsumer, { consumerId });
   }
 
   updateInvite(code: string, accept: boolean) {
@@ -97,37 +117,38 @@ export class RoomService {
   }
 
   closeConsumer(consumerId: string) {
-    this.assertSocket();
-    this.socket!.emit(Signaling.CloseConsumer, { consumerId });
+    if (!this.socket) return;
+    this.socket.emit(Signaling.CloseConsumer, { consumerId });
   }
 
   openConsumerStatsStream(consumerId: string, type: 'consumer' | 'producer') {
-    this.socket!.emit(Signaling.StatsSubscribe, { type, id: consumerId });
+    if (!this.socket) return;
+    this.socket.emit(Signaling.StatsSubscribe, { type, id: consumerId });
   }
 
   async closeProducer(sessionId: string, producerId: string) {
-    this.assertSocket();
-    return await this.socket!.emitWithAck(Signaling.CloseProducer, { sessionId, producerId });
+    if (!this.socket) return;
+    return await this.socket.emitWithAck(Signaling.CloseProducer, { sessionId, producerId });
   }
 
   async createProducer(sessionId: string, rtpParameters: RtpParameters, kind: MediaKind) {
-    this.assertSocket();
-    return await this.socket!.emitWithAck(Signaling.CreateProducer, { sessionId, rtpParameters, kind });
+    if (!this.socket) return;
+    return await this.socket.emitWithAck(Signaling.CreateSessionProducer, { sessionId, rtpParameters, kind });
   }
 
   async connectTransport(sessionId: string, dtlsParameters: DtlsParameters) {
-    this.assertSocket();
-    return await this.socket!.emitWithAck(Signaling.ConnectTransport, { sessionId, dtlsParameters });
+    if (!this.socket) return;
+    return await this.socket.emitWithAck(Signaling.ConnectSessionTransport, { sessionId, dtlsParameters });
   }
 
   async createConsumerFor(producerId: string, sessionId: string, rtpCapabilities: RtpCapabilities) {
-    this.assertSocket();
-    return await this.socket!.emitWithAck(Signaling.CreateConsumer, { producerId, sessionId, rtpCapabilities });
+    if (!this.socket) return;
+    return await this.socket.emitWithAck(Signaling.CreateSessionConsumer, { producerId, sessionId, rtpCapabilities });
   }
 
   async leaveSession(sessionId: string) {
-    this.assertSocket();
-    this.socket!.emit(Signaling.LeaveSession, { sessionId });
+    if (!this.socket) return;
+    this.socket.emit(Signaling.LeaveSession, { sessionId });
   }
 
   findRoomSession(sessionId: string) {
@@ -202,6 +223,7 @@ export class RoomService {
   private subscribeToMessages() {
     const socket = this.socket as Socket;
 
+    const close$ = fromEvent(socket, 'close');
     socket.on(Signaling.SessionClosed, ({ sessionId }: { sessionId: string }) => {
       this.store.dispatch(new RemoteSessionClosed(sessionId));
     });
@@ -222,7 +244,7 @@ export class RoomService {
       this.store.dispatch(new StatsEnded(id));
     });
 
-    socket.on(Signaling.StatsUpdate, ({ id, update, type }: { id: string, update: any, type: 'producer' | 'consumer' }) => {
+    socket.on(Signaling.StatsUpdate, ({ id, update, type }: { id: string, update: RTCStatsReport, type: 'producer' | 'consumer' }) => {
       this.store.dispatch(new StatsUpdated(id, update, type));
     });
 
@@ -230,12 +252,23 @@ export class RoomService {
       this.store.dispatch(new SpeakingSessionChanged(sessionId));
     });
 
-    socket.on(Signaling.PresentationCreated, ({ presentationId, timestamp }: { timestamp: string, presentationId: string }) => {
-      this.store.dispatch(new PresentationUpdated(presentationId, new Date(timestamp)));
-    });
+    // socket.on(Signaling.PresentationCreated, ({ presentationId, timestamp }: { timestamp: string, presentationId: string }) => {
+    //   this.store.dispatch(new PresentationUpdated(presentationId, new Date(timestamp)));
+    // });
 
-    socket.on(Signaling.PresentationUpdated, ({ presentationId: id, timestamp }: { timestamp: string, presentationId: string }) => {
-      this.store.dispatch(new PresentationUpdated(id, new Date(timestamp)));
+    // socket.on(Signaling.PresentationUpdated, ({ presentationId: id, timestamp }: { timestamp: string, presentationId: string }) => {
+    //   this.store.dispatch(new PresentationUpdated(id, new Date(timestamp)));
+    // });
+    fromEvent(socket, Signaling.PresentationUpdated).pipe(
+      takeUntil(close$),
+      debounceTime(100),
+      map(({ presentationId: id, timestamp }: { timestamp: string, presentationId: string }) => new PresentationUpdated(id, new Date(timestamp)))
+    ).subscribe(action => this.store.dispatch(action));
+
+    fromEvent(socket, Signaling.PresentationStarted).pipe(
+      takeUntil(close$),
+    ).subscribe(({ presentationId, producerId }: { producerId: string, presentationId: string }) => {
+      this.store.dispatch(new PresentationStarted(presentationId, producerId));
     });
   }
 
@@ -246,9 +279,8 @@ export class RoomService {
   }
 
   async joinSession(roomId: string, sessionId: string) {
-    this.assertSocket();
-
-    return await this.socket!.emitWithAck(Signaling.JoinSession, { roomId, sessionId });
+    if (!this.socket) return;
+    return await this.socket.emitWithAck(Signaling.JoinSession, { roomId, sessionId });
   }
 
   getRooms() {

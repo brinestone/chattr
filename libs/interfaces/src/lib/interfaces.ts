@@ -93,7 +93,7 @@ export interface IUpdateInviteRequest {
   accept: boolean;
 }
 
-export type IUpdate<T = any> = {
+export type IUpdate<T = unknown> = {
   type: string;
   data?: T;
 }
@@ -109,10 +109,10 @@ export enum Signaling {
   JoinSession = 'JOIN_SESSION',
   LeaveSession = 'LEAVE_SESSION',
   SessionClosed = 'SESSION_CLOSED',
-  ConnectTransport = 'CONNECT_TRANSPORT',
+  ConnectSessionTransport = 'CONNECT_SESSION_TRANSPORT',
   SessionOpened = 'SESSION_OPENED',
-  CreateConsumer = 'CREATE_CONSUMER',
-  CreateProducer = 'CREATE_PRODUCER',
+  CreateSessionConsumer = 'CREATE_SESSION_CONSUMER',
+  CreateSessionProducer = 'CREATE_SESSION_PRODUCER',
   ProducerOpened = 'PRODUCER_OPENED',
   ProducerClosed = 'PRODUCER_CLOSED',
   CloseProducer = 'CLOSE_PRODUCER',
@@ -127,8 +127,10 @@ export enum Signaling {
   SpeakingSessionChanged = 'SPEAKING_SESSION_CHANGED',
   SessionUpdated = 'SESSION_UPDATED',
   RoomUpdated = 'ROOM_UPDATED',
-  PresentationCreated = 'PRESENTATION_CREATED',
   PresentationUpdated = 'PRESENTATION_UPDATED',
-  PresentationEnded = 'PRESENTATION_ENDED',
-  JoinPresentation = 'JOIN_PRESENTATION'
+  JoinPresentation = 'JOIN_PRESENTATION',
+  ConnectPresentationTransport = 'CONNECT_PRESENTATION_TRANSPORT',
+  CreatePresentationProducer = 'CREATE_PRESENTATION_PRODUER',
+  PresentationStarted = 'PRESENTATION_STARTED',
+  CreatePresentationConsumer = 'CREATE_PRESENTATION_CONSUMER'
 }

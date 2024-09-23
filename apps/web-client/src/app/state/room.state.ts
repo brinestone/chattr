@@ -1,9 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { ConnectionStatus, IPresentation, IRoom, IRoomSession } from '@chattr/interfaces';
-import { Action, Actions, NgxsOnInit, State, StateContext, ofActionErrored, select } from '@ngxs/store';
+import { Action, Actions, NgxsOnInit, State, StateContext, select } from '@ngxs/store';
 import { append, iif, patch, removeItem } from '@ngxs/store/operators';
-import { EMPTY, filter, forkJoin, from, mergeMap, of, switchMap, tap, throwError } from 'rxjs';
-import { ClearConnectedRoom, CloseServerSideConsumer, CloseServerSideProducer, ConnectToRoom, ConnectTransport, ConnectedRoomChanged, StatsSubscribe, ConsumerStreamToggled, CreateInviteLink, CreateRoom, CreateServerSideConsumer, CreateServerSideProducer, InvitationInfoLoaded, JoinSession, LeaveSession, LoadInvitationInfo, LoadRooms, RemoteSessionClosed, RemoteSessionOpened, RoomError, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, ToggleConsumerStream, TransportConnected, UpdateConnectionStatus, UpdateInvite, CreatePresentation, PresentationUpdated } from '../actions';
+import { EMPTY, forkJoin, from, map, mergeMap, of, switchMap, tap, throwError } from 'rxjs';
+import { ClearConnectedRoom, CloseServerSideConsumer, CloseServerSideProducer, ConnectPresentationTransport, ConnectToRoom, ConnetSessionTransport, ConnectedRoomChanged, ConsumerStreamToggled, CreateInviteLink, CreatePresentation, CreateRoom, CreateServerSideConsumer, CreateServerSideProducer, InvitationInfoLoaded, JoinPresentation, JoinSession, LeaveSession, LoadInvitationInfo, LoadRooms, PresentationJoined, PresentationUpdated, RemoteSessionClosed, RemoteSessionOpened, RoomError, ServerSideConsumerCreated, ServerSideProducerCreated, SessionJoined, StatsSubscribe, ToggleConsumerStream, TransportConnected, UpdateConnectionStatus, UpdateInvite, PresentationTransportConnected, CreatePresentationProducer, PresentationProducerCreated, CreatePresentationConsumer, PresentationConsumerCreated } from '../actions';
 import { RoomService } from '../services/room.service';
 import { Selectors } from './selectors';
 
@@ -13,7 +13,10 @@ export type ConnectedRoom = {
   inviteLink?: string;
   otherSessions: IRoomSession[];
   connectionStatus: ConnectionStatus;
-  presentation?: IPresentation;
+  presentation?: {
+    meta: IPresentation;
+    isOwner: boolean;
+  };
 }
 
 export type RoomStateModel = {
@@ -22,7 +25,8 @@ export type RoomStateModel = {
 };
 
 type Context = StateContext<RoomStateModel>;
-const NO_ROOM_CONNECTED_ERROR = new Error('No room connected')
+const NO_ROOM_CONNECTED_ERROR = new Error('No room connected');
+const NO_PRESENTATION_CONFIGURED = new Error('No presentation configured');
 
 @Injectable()
 @State<RoomStateModel>({
@@ -40,18 +44,61 @@ export class RoomState implements NgxsOnInit {
     ctx.dispatch(ClearConnectedRoom);
   }
 
+  @Action(CreatePresentationConsumer)
+  onCreateServerSidePresentationConsumer(ctx: Context, { presentationId, producerId, rtpCapabilities }: CreatePresentationConsumer) {
+    return from(this.roomService.createPresentationConsmer(presentationId, producerId, rtpCapabilities)).pipe(
+      tap(({ id, rtpParameters }) => ctx.dispatch(new PresentationConsumerCreated(presentationId, producerId, rtpParameters, id)))
+    )
+  }
+
+  @Action(CreatePresentationProducer)
+  onCreatePresentationProducer(ctx: Context, { presentationId, rtpParameters }: CreatePresentationProducer) {
+    return from(this.roomService.createPresentationProducer(presentationId, rtpParameters)).pipe(
+      tap(({ producerId }) => ctx.dispatch(new PresentationProducerCreated(presentationId, producerId)))
+    )
+  }
+
+  @Action(ConnectPresentationTransport, { cancelUncompleted: true })
+  onConnectPresentationTransport(ctx: Context, { dtlsParameters, presentationId }: ConnectPresentationTransport) {
+    return from(this.roomService.connectPresentationTransport(presentationId, dtlsParameters)).pipe(
+      tap(() => ctx.dispatch(new PresentationTransportConnected(presentationId)))
+    )
+  }
+
+  @Action(JoinPresentation, { cancelUncompleted: true })
+  onJoinPresentation(ctx: Context, { id }: JoinPresentation) {
+    const connectedRoom = ctx.getState().connectedRoom;
+    if (!connectedRoom) return throwError(() => NO_ROOM_CONNECTED_ERROR);
+    if (!connectedRoom.presentation || connectedRoom.presentation.meta.id != id) return throwError(() => NO_PRESENTATION_CONFIGURED);
+
+    return from(this.roomService.joinPresentation(id, connectedRoom.info.id)).pipe(
+      tap(({ rtpCapabilities, transportParams }) => {
+        ctx.dispatch(new PresentationJoined(id, transportParams, rtpCapabilities));
+      }),
+      tap(({ isOwner, id: presentationId }) => {
+        ctx.setState(patch({
+          connectedRoom: iif(v => v.presentation?.meta.id == presentationId, patch({
+            presentation: patch({
+              isOwner
+            })
+          }))
+        }))
+      })
+    )
+  }
+
   @Action(PresentationUpdated)
   fetchPresentationInfoOnCreated(ctx: Context, { id, timestamp }: PresentationUpdated) {
     const connectedRoom = ctx.getState().connectedRoom;
     if (!connectedRoom) return throwError(() => NO_ROOM_CONNECTED_ERROR);
 
     if (connectedRoom.presentation) {
-      const previousoUpdateTimestamp = new Date(connectedRoom.presentation.updatedAt);
+      const previousoUpdateTimestamp = new Date(connectedRoom.presentation.meta.updatedAt);
       const currentTimestamp = timestamp;
-      if (connectedRoom.presentation?.id == id && previousoUpdateTimestamp.valueOf() == currentTimestamp.valueOf()) return EMPTY;
+      if (connectedRoom.presentation?.meta.id == id && previousoUpdateTimestamp.valueOf() == currentTimestamp.valueOf()) return EMPTY;
     }
     return this.roomService.findPresentation(id).pipe(
-      tap(presentation => ctx.setState(patch({ connectedRoom: patch({ presentation }) })))
+      tap(presentation => ctx.setState(patch({ connectedRoom: patch({ presentation: patch({ meta: presentation }) }) })))
     )
   }
 
@@ -61,7 +108,7 @@ export class RoomState implements NgxsOnInit {
     if (!connectedRoom) return throwError(() => NO_ROOM_CONNECTED_ERROR);
 
     return this.roomService.createPresentation(connectedRoom.info.id).pipe(
-      tap(presentation => ctx.setState(patch({ connectedRoom: patch({ presentation }) }))),
+      tap(presentation => ctx.setState(patch({ connectedRoom: patch({ presentation: patch({ meta: presentation }) }) }))),
       tap(({ id, updatedAt }) => ctx.dispatch(new PresentationUpdated(id, updatedAt)))
     );
   }
@@ -156,16 +203,10 @@ export class RoomState implements NgxsOnInit {
     )
   }
 
-  @Action(ConnectTransport)
-  onConnectTransport(ctx: Context, { dtlsParameters, sessionId }: ConnectTransport) {
+  @Action(ConnetSessionTransport)
+  onConnectTransport(ctx: Context, { dtlsParameters, sessionId }: ConnetSessionTransport) {
     const { connectedRoom } = ctx.getState();
     if (!connectedRoom) return throwError(() => NO_ROOM_CONNECTED_ERROR);
-    const subscription = this.actions$.pipe(
-      ofActionErrored(RoomError),
-      filter(({ action: { sessionId: actionSessionId } }) => actionSessionId === sessionId),
-    ).subscribe(({ result: { error } }) => {
-      console.log(error, 'test');
-    });
 
     return from(this.roomService.connectTransport(sessionId, dtlsParameters)).pipe(
       tap(() => {
@@ -241,11 +282,25 @@ export class RoomState implements NgxsOnInit {
           connectionStatus: of('idle' as ConnectionStatus),
           session: this.roomService.assertRoomSession(room.id),
           otherSessions: this.roomService.getConnectableSessions(room.id),
-          presentation: this.roomService.getCurrentPresentation(room.id)
+          presentation: this.roomService.getCurrentPresentation(room.id).pipe(
+            map(p => !p ? undefined : ({ meta: p, isOwner: false }))
+          )
         })
       }),
       tap(connectedRoom => ctx.setState(patch({
         connectedRoom
+      }))),
+      map(() => ctx.getState().connectedRoom),
+      tap((c) => ctx.setState(patch({
+        connectedRoom: iif(r => {
+          return r?.session.id == c?.presentation?.meta.parentSession
+        },
+          patch({
+            presentation: patch({
+              isOwner: true
+            })
+          })
+        )
       }))),
       tap(() => ctx.dispatch(ConnectedRoomChanged))
     )
