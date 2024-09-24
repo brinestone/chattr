@@ -51,7 +51,7 @@ class DataModule { }
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
         return {
-          secret: configService.getOrThrow<string>('SESSION_KEY'),
+          secret: configService.getOrThrow<string>('JWT_KEY'),
           signOptions: { expiresIn: '14d' }
         } as JwtModuleOptions;
       }
