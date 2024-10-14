@@ -3,7 +3,7 @@ import { Body, Controller, Post, Request, UseGuards, ValidationPipe } from "@nes
 import { Request as ExpressRequest } from 'express';
 import { LocalAuthGuard } from "../guards/local.guard";
 import { AuthService } from "../services/auth.service";
-import { User } from "../models";
+import { User } from "@chattr/domain";
 
 @Controller('auth')
 export class AuthController {

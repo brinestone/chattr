@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { Socket } from "socket.io";
 import { RoomService } from "../services/room.service";
-import { Principal } from "../models";
+import { Principal } from "@chattr/domain";
 import { RoomMemberRole } from "@chattr/interfaces";
 import { ROOM_ROLE } from "../decorators/room-role";
 

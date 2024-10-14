@@ -34,15 +34,15 @@ abstract class BaseEntity implements IEntity {
 
 @Schema({ timestamps: true })
 export class User extends BaseEntity implements IUser {
-  @Prop({ required: true, unique: true })
-  email: string;
+  @Prop({ type: String, required: true, unique: true })
+  email = '';
   @Prop()
   avatar?: string;
-  @Prop({ required: true })
+  @Prop({ type: String, required: true })
   @Exclude()
-  passwordHash: string;
-  @Prop({ required: true })
-  name: string;
+  passwordHash = '';
+  @Prop({ type: String, required: true })
+  name = '';
   @Prop()
   @Exclude()
   notificationResumeToken?: string;
@@ -64,11 +64,11 @@ export const UserSchema = SchemaFactory.createForClass(User)
 
 @Schema({ timestamps: true })
 export class RoomMembership extends BaseEntity implements IRoomMembership {
-  @Prop({ default: false })
-  isBanned: boolean;
+  @Prop({ type: Boolean, default: false })
+  isBanned = false;
 
-  @Prop({ default: true })
-  pending: boolean;
+  @Prop({ type: Boolean, default: true })
+  pending = true;
 
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Update' })
   @Exclude()
@@ -80,7 +80,7 @@ export class RoomMembership extends BaseEntity implements IRoomMembership {
     enum: ['guest', 'owner', 'moderator'],
     default: 'guest',
   })
-  role: RoomMemberRole;
+  role!: RoomMemberRole;
 
   @Prop({ required: true, ref: User.name, type: MongooseSchema.Types.ObjectId, _id: false })
   @Transform(
@@ -137,13 +137,13 @@ export class Room extends BaseEntity implements IRoom {
     },
     { toPlainOnly: true }
   )
-  members: string[];
+  members: string[] = [];
 
-  @Prop({ required: true })
-  name: string;
+  @Prop({ type: String, required: true })
+  name = '';
 
   @Prop()
-  image: string;
+  image?: string;
 
   constructor(data?: Partial<IRoom>) {
     super();
@@ -163,19 +163,19 @@ export const RoomSchema = SchemaFactory.createForClass(Room).pre(
 export class RoomSession extends BaseEntity implements IRoomSession {
   @Exclude()
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: Room.name, required: true })
-  roomId: string;
+  roomId?: MongooseSchema.Types.ObjectId;
 
   @Prop({ required: true })
-  serverIp: string;
+  serverIp?: string;
 
   @Prop()
-  clientIp: string;
+  clientIp?: string;
 
   @Prop()
   endDate?: Date;
 
-  @Prop({ default: true })
-  connected: boolean;
+  @Prop({ type: Boolean, default: true })
+  connected = true;
 
   @Prop({ _id: false, type: MongooseSchema.Types.ObjectId, ref: RoomMembership.name })
   @Transform(
@@ -187,7 +187,7 @@ export class RoomSession extends BaseEntity implements IRoomSession {
   member?: string;
 
   @Prop({ type: [String], default: [] })
-  producers: string[];
+  producers: string[] = [];
 
   @Prop()
   avatar?: string;
@@ -201,8 +201,8 @@ export class RoomSession extends BaseEntity implements IRoomSession {
   @Transform(({ value }) => (value as MongooseSchema.Types.ObjectId).toString(), { toPlainOnly: true })
   userId?: string;
 
-  @Prop({ required: true })
-  displayName: string;
+  @Prop({ type: String, required: true })
+  displayName = '';
 }
 
 export const RoomSessionSchema = SchemaFactory.createForClass(
@@ -233,30 +233,42 @@ export type Principal = {
 
 @Schema()
 export class Notification extends BaseEntity implements INotification, IUpdate {
-  type: string;
+  type = '';
 
   @Prop({
     type: MongooseSchema.Types.ObjectId, ref: User.name, required: true
   })
-  @Transform(({ value }) => (value as MongooseSchema.Types.ObjectId).toString(), { toPlainOnly: true })
-  from: string;
+  @Exclude()
+  _from?: MongooseSchema.Types.ObjectId;
+
+  @Expose({ toPlainOnly: true })
+  get from(): string {
+    return this._from?.toString() ?? '';
+  }
 
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: User.name, required: true })
   @Exclude()
-  to: string;
+  _to?: MongooseSchema.Types.ObjectId;
+
+  // @Expose()
+  // get to(): string {
+  //   return this._from?.toString() ?? '';
+  // }
 
   @Exclude()
-  seen: boolean;
+  seen = false
 
   @Prop()
   image?: string;
 
-  @Prop({ required: true })
-  title: string;
+  @Prop({ type: String, required: true })
+  title = ''
 
-  @Prop({ required: true })
-  body: string;
-  data: Record<string, unknown>;
+  @Prop({ type: String, required: true })
+  body = '';
+
+  @Prop({ type: MongooseSchema.Types.Map })
+  data: Record<string, unknown> = {};
 
   constructor(data?: Partial<INotification>) {
     super();
@@ -269,43 +281,46 @@ export const NotificationSchema = SchemaFactory.createForClass(Notification);
 @Schema()
 export class Invite extends BaseEntity implements IInvite, IUpdate {
   // @Exclude()
-  type: string;
+  type = '';
 
-  @Transform(({ value }) => {
-    return (value as MongooseSchema.Types.ObjectId).toString();
-  }, { toPlainOnly: true })
+  @Exclude()
   @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: Room.name })
-  roomId: string;
+  room?: MongooseSchema.Types.ObjectId;
+
+  @Expose()
+  get roomId(): string {
+    return this.room?.toString() ?? '';
+  }
 
   @Prop({ required: true })
-  expiresAt: Date;
+  expiresAt!: Date;
 
   @Prop({ required: false, type: MongooseSchema.Types.ObjectId, ref: User.name })
   @Exclude()
-  to: string;
+  to!: string;
 
   @Exclude()
-  seen: boolean;
+  seen!: boolean;
 
   @Prop({ default: false })
   @Exclude()
-  accepted: boolean;
+  accepted!: boolean;
 
   @Prop({ required: true })
-  url: string;
+  url!: string;
 
   @Prop({ required: true })
-  code: string;
+  code!: string;
 
   @Prop({ type: [MongooseSchema.Types.ObjectId], ref: User.name, _id: false })
   @Exclude()
-  acceptors: string[];
+  acceptors!: string[];
 
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: RoomMembership.name, _id: false, required: true })
   @Exclude()
-  createdBy: string;
+  createdBy!: string;
 
-  data: Record<string, unknown>;
+  data!: Record<string, unknown>;
 
   constructor(data?: Partial<Invite>) {
     super();
@@ -322,13 +337,13 @@ export class Update extends BaseEntity implements IUpdate {
     required: true,
     enum: [Notification.name, Invite.name]
   })
-  type: string;
+  type!: string;
 
   @Prop({ default: false })
-  seen: boolean;
+  seen!: boolean;
 
   @Prop({ default: {}, type: MongooseSchema.Types.Map })
-  data?: any;
+  data?: Record<string, unknown>;
 }
 
 export const UpdateSchema = SchemaFactory.createForClass(Update).pre('save', function (next) {
@@ -339,7 +354,7 @@ export const UpdateSchema = SchemaFactory.createForClass(Update).pre('save', fun
 @Schema({ timestamps: true })
 export class Presentation extends BaseEntity implements IPresentation {
   @Prop({ required: true })
-  displayName: string;
+  displayName!: string;
 
   @Transform(({ value }) => {
     return (value as MongooseSchema.Types.ObjectId).toString();
@@ -351,11 +366,11 @@ export class Presentation extends BaseEntity implements IPresentation {
     return (value as MongooseSchema.Types.ObjectId).toString();
   }, { toPlainOnly: true })
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: RoomSession.name, required: true })
-  parentSession: string;
+  parentSession!: string;
 
   @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: Room.name })
   @Exclude()
-  room: MongooseSchema.Types.ObjectId;
+  room!: MongooseSchema.Types.ObjectId;
 
   @Prop({})
   endedAt?: Date;

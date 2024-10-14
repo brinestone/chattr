@@ -2,7 +2,7 @@ import { Body, ClassSerializerInterceptor, Controller, Get, Param, ParseBoolPipe
 import { JwtGuard } from "../guards/jwt.guard";
 import { UpdatesService } from "../services/updates.service";
 import { Ctx } from "../decorators/extract-from-context.decorator";
-import { Principal } from "../models";
+import { Principal } from "@chattr/domain";
 import { UpdateInviteRequest } from "@chattr/dto";
 
 @Controller('invites')

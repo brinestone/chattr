@@ -1,6 +1,6 @@
-import {Signaling} from '@chattr/interfaces';
-import {Logger, UnprocessableEntityException, UseFilters, UseGuards} from '@nestjs/common';
-import {OnEvent} from '@nestjs/event-emitter';
+import { Signaling } from '@chattr/interfaces';
+import { Logger, UnprocessableEntityException, UseFilters, UseGuards } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import {
   ConnectedSocket,
   MessageBody,
@@ -11,17 +11,17 @@ import {
   WebSocketServer,
   WsException
 } from '@nestjs/websockets';
-import {DtlsParameters, MediaKind, RtpCapabilities, RtpParameters} from 'mediasoup/node/lib/types';
-import {Subscription} from 'rxjs';
-import {Server, Socket} from 'socket.io';
-import {Ctx} from '../decorators/extract-from-context.decorator';
-import {Roles} from '../decorators/room-role';
-import {Events} from '../events';
-import {WsExceptionFilter} from '../filters/ws-exception.filter';
-import {RoleGuard} from '../guards/role.guard';
-import {WsGuard} from '../guards/ws.guard';
-import {Principal} from '../models';
-import {RoomService} from '../services/room.service';
+import { DtlsParameters, MediaKind, RtpCapabilities, RtpParameters } from 'mediasoup/node/lib/types';
+import { Subscription } from 'rxjs';
+import { Server, Socket } from 'socket.io';
+import { Ctx } from '../decorators/extract-from-context.decorator';
+import { Roles } from '../decorators/room-role';
+import { Events } from '../events';
+import { WsExceptionFilter } from '../filters/ws-exception.filter';
+import { RoleGuard } from '../guards/role.guard';
+import { WsGuard } from '../guards/ws.guard';
+import { Principal } from '@chattr/domain';
+import { RoomService } from '../services/room.service';
 
 function getElevatedChannel(roomId: string) {
   return `elevated::${roomId}`;
@@ -31,7 +31,7 @@ function getPresenterChannel(roomId: string) {
   return `presenters::${roomId}`;
 }
 
-@WebSocketGateway(undefined, {cors: true})
+@WebSocketGateway(undefined, { cors: true })
 @UseFilters(new WsExceptionFilter())
 @UseGuards(WsGuard)
 export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -55,7 +55,7 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await this.roomService.closeSession(owningSession);
       await this.roomService.leaveSessions(userId, ...(client.data['sessions'] ?? []));
       await this.roomService.endUserPresentations(userId, client.data['presentation']);
-      client.to(roomId).emit(Signaling.SessionClosed, {sessionId: owningSession});
+      client.to(roomId).emit(Signaling.SessionClosed, { sessionId: owningSession });
       client.leave(roomId);
       client.leave(presenterChannel);
 
@@ -68,12 +68,12 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @OnEvent(Events.ActiveSessionChanged)
-  private onActiveSessionChanged({roomId, sessionId}: { sessionId: string, roomId: string }) {
-    this.server.to(roomId).emit(Signaling.SpeakingSessionChanged, {sessionId});
+  private onActiveSessionChanged({ roomId, sessionId }: { sessionId: string, roomId: string }) {
+    this.server.to(roomId).emit(Signaling.SpeakingSessionChanged, { sessionId });
   }
 
   @OnEvent(Events.AdmissionPending)
-  private onAdmissionPending({memberId, userId, displayName, avatar, roomId, clientIp}: {
+  private onAdmissionPending({ memberId, userId, displayName, avatar, roomId, clientIp }: {
     memberId: string,
     clientIp: string,
     userId: string,
@@ -94,7 +94,7 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @OnEvent(Events.PresentationUpdated)
   @OnEvent(Events.PresentationCreated)
-  private async onPresentationCreated({previousPresenter, presenter, id, roomId, timestamp}: {
+  private async onPresentationCreated({ previousPresenter, presenter, id, roomId, timestamp }: {
     previousPresenter?: string,
     timestamp: Date,
     roomId: string,
@@ -105,8 +105,8 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const roomSockets = await this.server.in(roomId).fetchSockets();
 
     const presenterChannel = getPresenterChannel(roomId);
-    const presenterSocket = roomSockets.find(({data}) => data['userId'] == presenter);
-    const previousPresenterSocket = !previousPresenter ? undefined : roomSockets.find(({data}) => data['userId'] == previousPresenter);
+    const presenterSocket = roomSockets.find(({ data }) => data['userId'] == presenter);
+    const previousPresenterSocket = !previousPresenter ? undefined : roomSockets.find(({ data }) => data['userId'] == previousPresenter);
     if (previousPresenterSocket)
       previousPresenterSocket.leave(presenterChannel);
     presenterSocket.join(presenterChannel);
@@ -120,8 +120,8 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage(Signaling.CreatePresentationConsumer)
   async onCreatePresentationConsumer(
-    @Ctx('user') {userId}: Principal,
-    @MessageBody() {presentationId, producerId, rtpCapabilities}: {
+    @Ctx('user') { userId }: Principal,
+    @MessageBody() { presentationId, producerId, rtpCapabilities }: {
       presentationId: string,
       rtpCapabilities: RtpCapabilities,
       producerId: string
@@ -136,8 +136,8 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage(Signaling.CreatePresentationProducer)
   async onCreatePresentationProducer(
-    @Ctx('user') {userId}: Principal,
-    @MessageBody() {presentationId, rtpParameters}: { presentationId: string, rtpParameters: RtpParameters },
+    @Ctx('user') { userId }: Principal,
+    @MessageBody() { presentationId, rtpParameters }: { presentationId: string, rtpParameters: RtpParameters },
     @ConnectedSocket() socket: Socket,
   ) {
     try {
@@ -157,8 +157,8 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage(Signaling.ConnectPresentationTransport)
   async onConnectPresentationTransport(
-    @Ctx('user') {userId}: Principal,
-    @MessageBody() {presentationId, dtlsParameters}: { presentationId: string, dtlsParameters: DtlsParameters }
+    @Ctx('user') { userId }: Principal,
+    @MessageBody() { presentationId, dtlsParameters }: { presentationId: string, dtlsParameters: DtlsParameters }
   ) {
     try {
       await this.roomService.connectPresentationTransport(presentationId, dtlsParameters, userId)
@@ -171,17 +171,17 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage(Signaling.JoinPresentation)
   async onJoinPresentation(
     @ConnectedSocket() socket: Socket,
-    @Ctx('user') {userId}: Principal,
-    @MessageBody() {id}: { id: string, roomId: string }
+    @Ctx('user') { userId }: Principal,
+    @MessageBody() { id }: { id: string, roomId: string }
   ) {
     try {
-      const {isOwner, rtpCapabilities, transportParams} = await this.roomService.joinPresentation(userId, id);
+      const { isOwner, rtpCapabilities, transportParams } = await this.roomService.joinPresentation(userId, id);
       socket.data['presentation'] = id;
       // if (isOwner) {
       //   socket.to(roomId).emit(Signaling.PresentationStarted, { id });
       //   socket.join(getPresenterChannel(roomId));
       // }
-      return {rtpCapabilities, transportParams, isOwner, id};
+      return { rtpCapabilities, transportParams, isOwner, id };
     } catch (err) {
       throw new WsException(err);
     }
@@ -190,18 +190,18 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage(Signaling.StatsSubscribe)
   createStatsSubscription(
     @ConnectedSocket() socket: Socket,
-    @MessageBody() {type, id}: { type: 'consumer' | 'producer', id: string }
+    @MessageBody() { type, id }: { type: 'consumer' | 'producer', id: string }
   ) {
     const subscription = this.roomService.observeStats(type, id).subscribe({
       next: (update) => {
-        socket.emit(Signaling.StatsUpdate, {id, type, update});
+        socket.emit(Signaling.StatsUpdate, { id, type, update });
       },
       error: (error: Error) => {
         this.logger.error(error.message, error.stack);
-        socket.emit(Signaling.StatsEnd, {id});
+        socket.emit(Signaling.StatsEnd, { id });
       },
       complete: () => {
-        socket.emit(Signaling.StatsEnd, {id});
+        socket.emit(Signaling.StatsEnd, { id });
       }
     });
     subscription.add(() => {
@@ -212,8 +212,8 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage(Signaling.LeaveSession)
   async handleSessionLeave(
-    @Ctx('user') {userId}: Principal,
-    @MessageBody() {sessionId}: { sessionId: string }
+    @Ctx('user') { userId }: Principal,
+    @MessageBody() { sessionId }: { sessionId: string }
   ) {
     try {
       await this.roomService.leaveSessions(userId, sessionId);
@@ -224,7 +224,7 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage(Signaling.ToggleConsumer)
   async handleConsumerToggling(
-    @MessageBody() {consumerId}: { consumerId: string }
+    @MessageBody() { consumerId }: { consumerId: string }
   ) {
     try {
       return await this.roomService.toggleConsumer(consumerId);
@@ -238,8 +238,8 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @Roles('moderator')
   async handleAdmissionApproval(
     @ConnectedSocket() socket: Socket,
-    @Ctx('user') {userId}: Principal,
-    @MessageBody() {userId: admittedUserId, displayName, avatar, roomId, clientIp, memberId, status}: {
+    @Ctx('user') { userId }: Principal,
+    @MessageBody() { userId: admittedUserId, displayName, avatar, roomId, clientIp, memberId, status }: {
       status: boolean,
       memberId: string,
       clientIp: string,
@@ -252,7 +252,7 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       if (status) {
         await this.roomService.admitMember(admittedUserId, memberId, displayName, roomId, clientIp, avatar);
-        socket.to(getElevatedChannel(roomId)).emit(Signaling.AdmissionApproved, {approvedBy: userId});
+        socket.to(getElevatedChannel(roomId)).emit(Signaling.AdmissionApproved, { approvedBy: userId });
       }
     } catch (err) {
       if (err instanceof UnprocessableEntityException) return;
@@ -262,7 +262,7 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage(Signaling.CloseConsumer)
   handleConsumerClosing(
-    @MessageBody() {consumerId}: { consumerId: string }
+    @MessageBody() { consumerId }: { consumerId: string }
   ) {
     try {
       this.roomService.closeConsumer(consumerId);
@@ -274,13 +274,13 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage(Signaling.CloseProducer)
   async handleProducerClose(
     @ConnectedSocket() socket: Socket,
-    @Ctx('user') {userId}: Principal,
-    @MessageBody() {sessionId, producerId}: { producerId: string, sessionId: string }
+    @Ctx('user') { userId }: Principal,
+    @MessageBody() { sessionId, producerId }: { producerId: string, sessionId: string }
   ) {
     try {
       await this.roomService.closeProducer(userId, sessionId, producerId);
       const roomId = socket.data['roomId'];
-      socket.to(roomId).emit(Signaling.ProducerClosed, {sessionId, producerId});
+      socket.to(roomId).emit(Signaling.ProducerClosed, { sessionId, producerId });
       return {};
     } catch (err) {
       throw new WsException(err);
@@ -291,7 +291,7 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleProducerCreation(
     @ConnectedSocket() socket: Socket,
     @Ctx('user') principal: Principal,
-    @MessageBody() {kind, rtpParameters, sessionId}: {
+    @MessageBody() { kind, rtpParameters, sessionId }: {
       sessionId: string,
       rtpParameters: RtpParameters,
       kind: MediaKind
@@ -301,7 +301,7 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const roomId = socket.data['roomId'];
       const ans = await this.roomService.createSessionProducer(sessionId, principal.userId, rtpParameters, kind, roomId);
       this.logger.verbose(`User: ${principal.userId} has created a "${kind}" producer on their session: ${sessionId}. Signaling peers...`);
-      socket.to(roomId).emit(Signaling.ProducerOpened, {sessionId, ...ans});
+      socket.to(roomId).emit(Signaling.ProducerOpened, { sessionId, ...ans });
       return ans;
     } catch (err) {
       throw new WsException(err);
@@ -313,7 +313,7 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleJoiningSession(
     @ConnectedSocket() socket: Socket,
     @Ctx('user') principal: Principal,
-    @MessageBody() {sessionId, roomId}: { roomId: string, sessionId: string }
+    @MessageBody() { sessionId, roomId }: { roomId: string, sessionId: string }
   ) {
     try {
       const {
@@ -335,7 +335,7 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (isSessionOwner) {
         socket.data['owningSession'] = sessionId;
         this.logger.verbose(`User: ${principal.userId} has opened their session: ${sessionId}. Signaling room peers`);
-        socket.to(roomId).emit(Signaling.SessionOpened, {sessionId})
+        socket.to(roomId).emit(Signaling.SessionOpened, { sessionId })
       }
       return params;
     } catch (err) {
@@ -347,7 +347,7 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage(Signaling.ConnectSessionTransport)
   async handleConnectTransport(
     @Ctx('user') principal: Principal,
-    @MessageBody() {dtlsParameters, sessionId}: { dtlsParameters: DtlsParameters; sessionId: string }
+    @MessageBody() { dtlsParameters, sessionId }: { dtlsParameters: DtlsParameters; sessionId: string }
   ) {
     try {
       await this.roomService
@@ -361,8 +361,8 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage(Signaling.CreateSessionConsumer)
   async handleCreateConsumer(
-    @Ctx('user') {userId}: Principal,
-    @MessageBody() {sessionId, producerId, rtpCapabilities}: {
+    @Ctx('user') { userId }: Principal,
+    @MessageBody() { sessionId, producerId, rtpCapabilities }: {
       sessionId: string,
       producerId: string,
       rtpCapabilities: RtpCapabilities

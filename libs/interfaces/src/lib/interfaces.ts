@@ -20,8 +20,8 @@ export interface INotification extends IEntity {
 export type RoomMemberRole = 'guest' | 'owner' | 'moderator';
 
 export interface IRoomSession extends IEntity {
-  serverIp: string;
-  clientIp: string;
+  serverIp?: string;
+  clientIp?: string;
   endDate?: Date;
   member?: string;
   userId?: string;

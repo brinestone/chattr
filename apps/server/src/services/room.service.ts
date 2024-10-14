@@ -35,7 +35,7 @@ import {
   switchMap
 } from 'rxjs';
 import { Events } from '../events';
-import { Presentation, Room, RoomMembership, RoomSession, User } from '../models';
+import { Presentation, Room, RoomMembership, RoomSession, User } from '@chattr/domain';
 import { InvitationEventData, UpdatesService } from './updates.service';
 import { UserService } from './user.service';
 

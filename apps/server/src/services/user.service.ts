@@ -3,7 +3,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { genSalt, hash } from 'bcrypt';
 import { Model, UpdateQuery } from 'mongoose';
-import { User } from '../models';
+import { User } from '@chattr/domain'
 import { UserDto } from '@chattr/dto';
 import { plainToInstance } from 'class-transformer';
 

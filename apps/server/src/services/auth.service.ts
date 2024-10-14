@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { compare } from "bcrypt";
-import { User } from "../models";
+import { User } from "@chattr/domain";
 import { UserService } from "./user.service";
 import { ISignupRequest } from "@chattr/interfaces";
 

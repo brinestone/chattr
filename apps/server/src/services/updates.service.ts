@@ -8,7 +8,7 @@ import EventEmitter from "events";
 import { FilterQuery, HydratedDocument, Model, Types, UpdateQuery } from "mongoose";
 import { filter, fromEvent, map } from "rxjs";
 import { Events } from "../events";
-import { Invite, Notification, Update } from '../models';
+import { Invite, Notification, Update } from '@chattr/domain';
 import { generateRandomToken } from "../util";
 
 type MessageEvent<T = Notification> = {
@@ -236,7 +236,7 @@ export class UpdatesService {
 
     getLiveNotifications(userId: string) {
         return fromEvent(this.observer, Events.NotificationSent).pipe(
-            filter(({ to }: Notification) => to.toString() == userId),
+            filter(({ _to }: Notification) => _to.toString() == userId),
             map(data => ({ data: instanceToPlain(data), event: 'Notification' } as MessageEvent))
         );
     }

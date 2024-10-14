@@ -12,7 +12,7 @@ import { InvitesController, UpdatesController } from './controller/updates.contr
 import { UserController } from './controller/user.controller';
 import { RoomGateway } from './gateways/room.gateway';
 import { LoggerMiddleware } from './middleware/logger.middleware';
-import { Invite, InviteSchema, Notification, NotificationSchema, Presentation, PresentationSchema, Room, RoomMemberSchema, RoomMembership, RoomSchema, RoomSession, RoomSessionSchema, Update, UpdateSchema, User, UserSchema } from './models';
+import { Invite, InviteSchema, Notification, NotificationSchema, Presentation, PresentationSchema, Room, RoomMemberSchema, RoomMembership, RoomSchema, RoomSession, RoomSessionSchema, Update, UpdateSchema, User, UserSchema } from '@chattr/domain';
 import { AuthService } from './services/auth.service';
 import { RoomService } from './services/room.service';
 import { UpdatesService } from './services/updates.service';

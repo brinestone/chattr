@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { Socket } from "socket.io";
-import { Principal } from "../models";
+import { Principal } from "@chattr/domain";
 
 @Injectable()
 export class WsGuard implements CanActivate {

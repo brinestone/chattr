@@ -2,7 +2,7 @@ import { CreateInviteRequest } from '@chattr/dto';
 import { Body, ClassSerializerInterceptor, Controller, Get, Ip, Param, Post, Put, UseGuards, UseInterceptors, ValidationPipe } from '@nestjs/common';
 import { Ctx } from '../decorators/extract-from-context.decorator';
 import { JwtGuard } from '../guards/jwt.guard';
-import { Principal } from '../models';
+import { Principal } from '@chattr/domain';
 import { RoomService } from '../services/room.service';
 import { UserService } from '../services/user.service';
 
