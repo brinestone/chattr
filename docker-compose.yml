@@ -1,0 +1,49 @@
+version: '3.2'
+
+networks:
+  backend:
+  frontend:
+  api:
+
+services:
+  db:
+    networks:
+      - backend
+    image: mongo:noble
+    restart: always
+    environment:
+      - MONGO_INIT_ROOT_USERNAME=chattr
+      - MONGO_INIT_ROOT_PASSWORD=chattr
+    ports:
+      - 27017:27017
+
+  api:
+    depends_on:
+      - db
+    restart: unless-stopped
+    networks:
+      - backend
+      - api
+    image: docker.io/brinestone/chattr-server:1.0
+    environment:
+      - SERVER_PORT=9000
+      - JWT_KEY=test
+      - NODE_ENV=production
+      - DB_URI=mongodb://chattr:chattr@db:27017
+      - RTC_MIN_PORT=40000
+      - RTC_MAX_PORT=50000
+      - DTLS_CERT_PATH=
+      - DTLS_PRIVATE_PATH=
+      - TRANSPORT_PROTOCOL=udp
+      - ANNOUNCED_IP=
+  
+  web-client:
+    depends_on:
+      - api
+    networks:
+      - frontend
+      - api
+    image: docker.io/brinestone/chattr-web-client:1.0
+    environment:
+      - PORT=4100
+      - API_ORIGIN=http://api:9000

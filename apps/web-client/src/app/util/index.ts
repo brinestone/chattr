@@ -1,8 +1,9 @@
 import { HttpErrorResponse } from "@angular/common/http";
 import { Signal, effect, signal } from "@angular/core";
-import { ActionCompletion, ActionType, Actions, ofActionCompleted, ofActionDispatched } from "@ngxs/store";
+import { ActionCompletion, ActionType, Actions, Store, ofActionCompleted, ofActionDispatched } from "@ngxs/store";
 import { Message } from "primeng/api";
-import { ObservableInput, identity, map, merge, mergeMap, throwError } from "rxjs";
+import { EMPTY, ObservableInput, identity, map, merge, mergeMap, switchMap, throwError } from "rxjs";
+import { SignOut } from "../actions";
 
 export function signalDebounce<T>(refSignal: Signal<T>, timeOutMs = 0): Signal<T> {
     const debounceSignal = signal(refSignal());
@@ -44,6 +45,17 @@ export function monitorAction<TOutput, TAction = ActionType>(actions$: Actions, 
 
 export function errorToMessage(error: Error, life?: number) {
     return { severity: 'error', summary: 'Error', detail: error.message, life } as Message;
+}
+
+export function handleUnauthorizedResponse(store: Store) {
+    return function (error: Error) {
+        if (error instanceof HttpErrorResponse && error.status == 401) {
+            return store.dispatch(SignOut).pipe(
+                switchMap(() => EMPTY)
+            );
+        }
+        return throwError(() => error)
+    }
 }
 
 export function parseHttpClientError(error: Error): ObservableInput<never> {

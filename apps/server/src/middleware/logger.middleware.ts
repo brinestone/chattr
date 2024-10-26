@@ -8,10 +8,10 @@ export class LoggerMiddleware implements NestMiddleware {
 
     use(req: Request, res: Response, next: (error?: Error) => void) {
         const start= moment();
-        res.on('finish', () => {
+        res.on('finish', () => { 
             const end = moment();
             const timeTaken = duration(end.diff(start)).asMilliseconds()
-            const msg = `${req.method}\t|${res.statusCode}\t|${timeTaken}ms\t|${req.url}`;
+            const msg = `${req.method.slice(0,4)}\t|${res.statusCode}\t|${timeTaken}ms\t|${req.url}`;
             if (res.statusCode < 400)
                 this.logger.log(msg);
             else if (res.statusCode < 500)

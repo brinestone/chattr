@@ -1,7 +1,12 @@
 @defer (when !!presentationStream()) {
-<video [srcObject]="presentationStream()" class="w-full h-full" autoplay></video>
+<div class="flex justify-center items-center w-full h-full bg-slate-500">
+    <div class="max-w-[840px] max-h-[640px] border-2 border-white border-solid rounded overflow-hidden">
+        <video [srcObject]="presentationStream()" class="shadow-md w-full h-full" autoplay></video>
+    </div>
+</div>
 }@placeholder {
-<div class="w-full h-full justify-center flex items-center bg-black bg-opacity-80 gap-3">
+<div style="background: linear-gradient(to bottom, transparent, black);"
+    class="w-full h-full justify-center flex items-center gap-3">
     <p-progressSpinner animationDuration=".5s" styleClass="w-[2.5rem] h-[2.5rem]" strokeWidth="4" />
     <p class="text-2xl text-white"> Waiting for presentation to start...</p>
 </div>

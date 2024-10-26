@@ -5,6 +5,8 @@
   "scripts": {
     "start:web-client": "npx nx run web-client:serve:development --ssl",
     "start:server": "npx nx run server:serve:development --verbose --inspect",
+    "build:server-image": "npx nx run server:docker-build",
+    "build:web-client-image": "npx nx run web-client:docker-build",
     "dev": "npx nx run-many -t serve",
     "format": "npx nx affected:lint --fix --base=master"
   },

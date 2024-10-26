@@ -78,7 +78,12 @@ export class RoomMemberComponent implements OnDestroy {
     const session = this.session();
     return session.id == producibleSession?.id;
   });
-  readonly errored = output<Error>()
+  readonly errored = output<Error>();
+  readonly displayName = computed(() => {
+    const canPublish = this.canPublish();
+    const name = this.session().displayName + (canPublish ? ' (You)' : '');
+    return name;
+  })
   readonly avatar = computed(() => {
     const { displayName, avatar } = this.session();
     if (avatar) return avatar;

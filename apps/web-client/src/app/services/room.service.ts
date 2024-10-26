@@ -20,7 +20,7 @@ import {
 import { Socket, io } from 'socket.io-client';
 import { environment } from '../../environments/environment.development';
 import { PresentationStarted, PresentationUpdated, RemoteProducerClosed, RemoteProducerOpened, RemoteSessionClosed, RemoteSessionOpened, RoomError, SpeakingSessionChanged, StatsEnded, StatsUpdated, UpdateConnectionStatus } from '../actions';
-import { parseHttpClientError } from '../util';
+import { handleUnauthorizedResponse, parseHttpClientError } from '../util';
 
 export type RoomEvent<T = unknown> = {
   event: 'error' | 'message';
@@ -71,18 +71,21 @@ export class RoomService {
         }
         return throwError(() => err);
       }),
+      catchError(handleUnauthorizedResponse(this.store)),
       catchError(parseHttpClientError)
     )
   }
 
   findPresentation(id: string) {
     return this.httpClient.get<IPresentation>(`${environment.backendOrigin}/rooms/presentations/${id}`).pipe(
+      catchError(handleUnauthorizedResponse(this.store)),
       catchError(parseHttpClientError)
     )
   }
 
   createPresentation(roomId: string) {
     return this.httpClient.put<IPresentation>(`${environment.backendOrigin}/rooms/${roomId}/present`, {}).pipe(
+      catchError(handleUnauthorizedResponse(this.store)),
       catchError(parseHttpClientError)
     );
   }
@@ -95,12 +98,14 @@ export class RoomService {
   updateInvite(code: string, accept: boolean) {
     const body: IUpdateInviteRequest = { code, accept };
     return this.httpClient.put(`${environment.backendOrigin}/invites`, body).pipe(
+      catchError(handleUnauthorizedResponse(this.store)),
       catchError(parseHttpClientError)
     );
   }
 
   getInvitationInfo(code: string) {
     return this.httpClient.get<InviteInfo>(`${environment.backendOrigin}/invites/${code}`).pipe(
+      catchError(handleUnauthorizedResponse(this.store)),
       catchError(parseHttpClientError)
     );
   }
@@ -112,6 +117,7 @@ export class RoomService {
       key
     };
     return this.httpClient.post<{ url: string }>(`${environment.backendOrigin}/rooms/invite`, request).pipe(
+      catchError(handleUnauthorizedResponse(this.store)),
       catchError(parseHttpClientError)
     )
   }
@@ -153,36 +159,37 @@ export class RoomService {
 
   findRoomSession(sessionId: string) {
     return this.httpClient.get<IRoomSession>(`${environment.backendOrigin}/rooms/sessions/${sessionId}`).pipe(
+      catchError(handleUnauthorizedResponse(this.store)),
       catchError(parseHttpClientError)
     );
   }
 
   assertRoomSession(roomId: string) {
     return this.httpClient.get<IRoomSession>(`${environment.backendOrigin}/rooms/${roomId}/session`).pipe(
+      catchError(handleUnauthorizedResponse(this.store)),
       catchError(parseHttpClientError)
     );
   }
 
   getConnectableSessions(roomId: string) {
     return this.httpClient.get<IRoomSession[]>(`${environment.backendOrigin}/rooms/${roomId}/connectable-sessions`).pipe(
+      catchError(handleUnauthorizedResponse(this.store)),
       catchError(parseHttpClientError)
     );
   }
 
   getRoomInfo(roomId: string) {
     return this.httpClient.get<IRoom>(`${environment.backendOrigin}/rooms/${roomId}`).pipe(
+      catchError(handleUnauthorizedResponse(this.store)),
       catchError(parseHttpClientError)
     );
   }
 
   createRoom(name: string) {
     return this.httpClient.post(`${environment.backendOrigin}/rooms`, { name }).pipe(
+      catchError(handleUnauthorizedResponse(this.store)),
       catchError(parseHttpClientError)
     );
-  }
-
-  private assertSocket() {
-    if (!this.socket) throw new Error('No connection has not been established with the server');
   }
 
   establishConnection(roomId: string, authToken?: string) {

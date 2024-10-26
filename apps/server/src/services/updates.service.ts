@@ -1,3 +1,4 @@
+import { Invite, Notification, Update } from '@chattr/domain';
 import { InviteDto } from "@chattr/dto";
 import { ICreateRoomInviteRequest, IUpdateInviteRequest, InviteInfo } from "@chattr/interfaces";
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
@@ -5,11 +6,11 @@ import { InjectModel } from "@nestjs/mongoose";
 import { instanceToPlain, plainToInstance } from "class-transformer";
 import { isMongoId } from "class-validator";
 import EventEmitter from "events";
-import { FilterQuery, HydratedDocument, Model, Types, UpdateQuery } from "mongoose";
+import { ClientSession, FilterQuery, HydratedDocument, Model, Types, UpdateQuery } from "mongoose";
 import { filter, fromEvent, map } from "rxjs";
 import { Events } from "../events";
-import { Invite, Notification, Update } from '@chattr/domain';
 import { generateRandomToken } from "../util";
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 type MessageEvent<T = Notification> = {
     event: string,
@@ -32,9 +33,10 @@ export class UpdatesService {
     private readonly logger = new Logger(UpdatesService.name);
     private readonly notificationModel: Model<Notification>;
     private readonly inviteModel: Model<Invite>;
-    readonly observer = new EventEmitter();
     constructor(
-        @InjectModel(Update.name) private updatesModel: Model<Update>) {
+        @InjectModel(Update.name) private updatesModel: Model<Update>,
+        private readonly eventEmitter: EventEmitter2
+    ) {
         this.notificationModel = updatesModel.discriminators[Notification.name];
         this.inviteModel = updatesModel.discriminators[Invite.name];
     }
@@ -52,7 +54,7 @@ export class UpdatesService {
             {
                 $lookup: {
                     from: 'rooms',
-                    localField: 'roomId',
+                    localField: 'room',
                     foreignField: '_id',
                     as: 'room'
                 }
@@ -134,7 +136,7 @@ export class UpdatesService {
                 $project: {
                     _id: 0,
                     id: { $toString: '$_id' },
-                    roomId: { $toString: '$roomId' },
+                    roomId: { $toString: '$room._id' },
                     createdAt: 1,
                     displayName: '$room.name',
                     image: '$room.image',
@@ -150,61 +152,70 @@ export class UpdatesService {
     }
 
     async updateInvite({ accept: accepted, code }: IUpdateInviteRequest, actor: string) {
-        const now = new Date();
-        const inviteDoc = await this.inviteModel.findOne({
-            code,
-            expiresAt: { $gt: now },
-            $or: [
-                { to: null },
-                { to: actor, accepted: { $ne: true } }
-            ]
-        });
+        const session = await this.inviteModel.db.startSession();
+        try {
+            await session.withTransaction(async () => {
+                const now = new Date();
+                const inviteDoc = await this.inviteModel.findOne({
+                    code,
+                    expiresAt: { $gt: now },
+                    $or: [
+                        { to: null },
+                        { to: actor, accepted: { $ne: true } }
+                    ]
+                });
 
-        if (!inviteDoc) throw new NotFoundException('Invite not found');
-        const update: UpdateQuery<HydratedDocument<Invite>> = {
-            $set: {},
-            $inc: {
-                __v: 1
-            }
-        };
+                if (!inviteDoc) throw new NotFoundException('Invite not found');
+                const update: UpdateQuery<HydratedDocument<Invite>> = {
+                    $set: {},
+                    $inc: {
+                        __v: 1
+                    }
+                };
 
-        if (inviteDoc.to) {
-            update.$set.accepted = accepted;
-            update.$set.expiresAt = now;
-        }
-        if (accepted) {
-            update.$push = {
-                acceptors: actor
-            }
-        }
+                if (inviteDoc.to) {
+                    update.$set.accepted = accepted;
+                    update.$set.expiresAt = now;
+                }
+                if (accepted) {
+                    update.$push = {
+                        acceptors: actor
+                    }
+                }
 
-        await inviteDoc.updateOne(update).exec();
+                await inviteDoc.updateOne(update, { session }).exec();
 
-        if (accepted) {
-            this.observer.emit(Events.InvitationAccepted, { inviteId: inviteDoc._id.toString(), userId: actor, roomId: inviteDoc.roomId, targeted: !!inviteDoc.to });
-        } else {
-            this.observer.emit(Events.InvitationDenied, { inviteId: inviteDoc._id.toString(), userId: actor, roomId: inviteDoc.roomId, targeted: !!inviteDoc.to });
+                if (accepted) {
+                    this.eventEmitter.emit(Events.InvitationAccepted, { inviteId: inviteDoc._id.toString(), userId: actor, roomId: inviteDoc.room, targeted: !!inviteDoc.to });
+                } else {
+                    this.eventEmitter.emit(Events.InvitationDenied, { inviteId: inviteDoc._id.toString(), userId: actor, roomId: inviteDoc.room, targeted: !!inviteDoc.to });
+                }
+            })
+            await session.commitTransaction();
+        } catch (err) {
+            await session.abortTransaction();
+            throw err
         }
     }
 
-    async createInvite({ roomId, userId: inviteeId, redirect, key }: ICreateRoomInviteRequest, createdBy: string): Promise<[string, string]> {
+    async createInvite({ roomId, userId: inviteeId, redirect, key }: ICreateRoomInviteRequest, createdBy: string, dbSession?: ClientSession): Promise<[string, string]> {
         const expiresAt = new Date(Date.now() + 3 * 3_600_000);
         const url = new URL(redirect);
         const code = generateRandomToken(3).toUpperCase();
         url.searchParams.set(key, code);
         const doc = await new this.inviteModel({
-            roomId, to: inviteeId, expiresAt, url: url.toString(), code, createdBy
-        }).save();
+            room: roomId, to: inviteeId, expiresAt, url: url.toString(), code, createdBy
+        }).save({ session: dbSession });
 
         return [url.toString(), doc._id.toString()];
     }
 
-    async createNotification({ body, title, to, sender, data, image }: ICreateNotificationRequest) {
+    async createNotification({ body, title, to, sender, data, image }: ICreateNotificationRequest, dbSession?: ClientSession) {
         const doc = await new this.notificationModel({
             body, title, to, data, from: sender, image
-        }).save();
+        }).save({ session: dbSession });
         const notification = new Notification(doc.toObject());
-        this.observer.emit(Events.NotificationSent, notification);
+        this.eventEmitter.emit(Events.NotificationSent, notification);
     }
 
     async markAsSeen(...ids: string[]) {
@@ -235,7 +246,7 @@ export class UpdatesService {
 
 
     getLiveNotifications(userId: string) {
-        return fromEvent(this.observer, Events.NotificationSent).pipe(
+        return fromEvent(this.eventEmitter, Events.NotificationSent).pipe(
             filter(({ _to }: Notification) => _to.toString() == userId),
             map(data => ({ data: instanceToPlain(data), event: 'Notification' } as MessageEvent))
         );

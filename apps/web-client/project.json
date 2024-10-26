@@ -15,6 +15,9 @@
         "{options.outputPath}"
       ],
       "options": {
+        "allowedCommonJsDependencies": [
+          "mediasoup-client"
+        ],
         "outputPath": "dist/apps/web-client",
         "index": "apps/web-client/src/index.html",
         "browser": "apps/web-client/src/main.ts",
@@ -95,6 +98,12 @@
         "buildTarget": "web-client:build",
         "staticFilePath": "dist/apps/web-client/browser"
       }
+    },
+    "docker-build": {
+      "dependsOn": [
+        "build"
+      ],
+      "command": "docker build -f apps/web-client/Dockerfile . -t brinestone/chattr-web-client:1.1"
     }
   }
 }

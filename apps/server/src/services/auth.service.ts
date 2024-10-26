@@ -9,6 +9,11 @@ import { ISignupRequest } from "@chattr/interfaces";
 export class AuthService {
     constructor(private userService: UserService, private jwtService: JwtService) { }
 
+    async doesUserExist(id: string) {
+        const user = await this.userService.findByIdInternalAsync(id);
+        return user != null
+    }
+
     async signUpUser(request: ISignupRequest) {
         return this.userService.createUserAsync(request);
     }

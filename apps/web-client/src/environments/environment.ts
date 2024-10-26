@@ -8,5 +8,5 @@ export const environment = {
         messagingSenderId: "414009952865",
         appId: "1:414009952865:web:50b404a386369f81013820"
       },
-    backendOrigin: ''
+    backendOrigin: '/api'
 } as const;

@@ -1,16 +1,19 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { ILoginRequest, ILoginResponse, INotification, ISignupRequest } from '@chattr/interfaces';
+import { Store } from '@ngxs/store';
+import { EventSourcePlus } from 'event-source-plus';
 import { jwtDecode } from 'jwt-decode';
 import { Observable, catchError } from 'rxjs';
 import { environment } from '../../environments/environment.development';
-import { parseHttpClientError } from '../util';
-import { EventSourcePlus } from 'event-source-plus';
+import { handleUnauthorizedResponse, parseHttpClientError } from '../util';
+
 @Injectable({
   providedIn: 'root'
 })
 export class UserService {
   private readonly http = inject(HttpClient);
+  private readonly store = inject(Store);
 
   isSignedIn(jwt: string) {
     try {
@@ -55,19 +58,23 @@ export class UserService {
         offset: offset ?? ''
       }
     }).pipe(
+      catchError(handleUnauthorizedResponse(this.store)),
       catchError(parseHttpClientError)
     )
   }
 
   signUp(request: ISignupRequest) {
     return this.http.post(`${environment.backendOrigin}/auth/signup`, request).pipe(
+      catchError(handleUnauthorizedResponse(this.store)),
       catchError(parseHttpClientError)
     )
   }
 
   signIn(request: ILoginRequest) {
     return this.http.post<ILoginResponse>(`${environment.backendOrigin}/auth/login`, request).pipe(
+      // catchError(handleUnauthorizedResponse(this.store)),
       catchError(parseHttpClientError)
     );
   }
 }
+

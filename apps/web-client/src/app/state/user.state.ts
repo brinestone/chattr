@@ -36,7 +36,7 @@ export class UserState implements NgxsOnInit {
     }
 
     @Action(SignOut)
-    stopLiveNotifications(_: Context) {
+    stopLiveNotifications() {
         this.liveNotificationsSubscription?.unsubscribe();
     }
 

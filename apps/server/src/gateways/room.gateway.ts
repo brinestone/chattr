@@ -1,3 +1,4 @@
+import { Principal } from '@chattr/domain';
 import { Signaling } from '@chattr/interfaces';
 import { Logger, UnprocessableEntityException, UseFilters, UseGuards } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
@@ -20,7 +21,6 @@ import { Events } from '../events';
 import { WsExceptionFilter } from '../filters/ws-exception.filter';
 import { RoleGuard } from '../guards/role.guard';
 import { WsGuard } from '../guards/ws.guard';
-import { Principal } from '@chattr/domain';
 import { RoomService } from '../services/room.service';
 
 function getElevatedChannel(roomId: string) {
@@ -101,7 +101,6 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
     presenter: string,
     id: string
   }) {
-    console.count('lkjlj');
     const roomSockets = await this.server.in(roomId).fetchSockets();
 
     const presenterChannel = getPresenterChannel(roomId);
@@ -178,8 +177,9 @@ export class RoomGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const { isOwner, rtpCapabilities, transportParams } = await this.roomService.joinPresentation(userId, id);
       socket.data['presentation'] = id;
       // if (isOwner) {
-      //   socket.to(roomId).emit(Signaling.PresentationStarted, { id });
-      //   socket.join(getPresenterChannel(roomId));
+      //   const presenters = getPresenterChannel(roomId);
+      //   socket.join(presenters);
+      //   socket.to(roomId).except(presenters).emit(Signaling.PresentationStarted, { id });
       // }
       return { rtpCapabilities, transportParams, isOwner, id };
     } catch (err) {

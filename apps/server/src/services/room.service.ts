@@ -1,7 +1,8 @@
+import { Presentation, Room, RoomMembership, RoomSession, User } from '@chattr/domain';
 import { ICreateRoomInviteRequest, IRoomMembership, RoomMemberRole } from '@chattr/interfaces';
 import { ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, PreconditionFailedException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash } from 'crypto';
 import { createWorker } from 'mediasoup';
@@ -14,11 +15,12 @@ import {
   RtpCapabilities,
   RtpCodecCapability,
   RtpParameters,
+  TransportProtocol,
   WebRtcServer,
   WebRtcTransport,
   Worker
 } from 'mediasoup/node/lib/types';
-import { HydratedDocument, Model, Types } from 'mongoose';
+import { ClientSession, HydratedDocument, Model, Types } from 'mongoose';
 import { cpus, networkInterfaces } from 'os';
 import {
   EMPTY,
@@ -26,7 +28,6 @@ import {
   first,
   forkJoin,
   from,
-  fromEvent,
   identity,
   interval,
   last,
@@ -35,14 +36,13 @@ import {
   switchMap
 } from 'rxjs';
 import { Events } from '../events';
-import { Presentation, Room, RoomMembership, RoomSession, User } from '@chattr/domain';
 import { InvitationEventData, UpdatesService } from './updates.service';
 import { UserService } from './user.service';
 
 const ONE_HOUR = 3_600_000;
 const ROOM_ACCESS_DENIED = 'You are not permitted to access this room';
 const MSG_OPERATION_NOT_ALLOWED = 'Operation not allowed';
-const INVITATION_PENDING = 'Your invitation into this room has not yet been accepted';
+// const INVITATION_PENDING = 'Your invitation into this room has not yet been accepted';
 const MSG_PRESENTATION_NOT_FOUND = 'Presentation not found';
 
 let ip = '';
@@ -177,6 +177,10 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     }).exec();
 
     return await transport.connect({ dtlsParameters })
+      .catch((err: Error) => {
+        if (err.message == 'connect() already called [method:webRtcTransport.connect]') return;
+        throw err
+      })
       .then(() => this.logger.debug(`User: ${userId} has connected their WebRTC transport::${transport.id} on presentation: ${presentationId}`));
   }
 
@@ -203,7 +207,6 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
       const transportId = computeTransportTrackingId(userId, sessionId);
       const transport = this.webRtcTransports[transportId];
       transport?.close();
-      delete this.webRtcTransports[transportId];
 
       const sessionDoc = await this.sessionModel.findById(sessionId);
       if (!sessionDoc) {
@@ -276,43 +279,55 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   async createInvite(request: ICreateRoomInviteRequest, invitorId: string) {
-    const memberDoc = await this.memberModel.findOne({
-      isBanned: { $ne: true },
-      pending: { $ne: true },
-      userId: invitorId,
-      roomId: request.roomId
-    });
-    const hasElevatedPrivileges = await this.userHasElevatedPrivileges(memberDoc);
+    const session = await this.model.startSession();
+    try {
+      const ans = await session.withTransaction(async () => {
+        const memberDoc = await this.memberModel.findOne({
+          isBanned: { $ne: true },
+          pending: { $ne: true },
+          userId: invitorId,
+          roomId: request.roomId
+        }, undefined, { session });
+        const hasElevatedPrivileges = await this.userHasElevatedPrivileges(memberDoc, session);
 
-    if (!hasElevatedPrivileges) throw new ForbiddenException('Operation denied');
+        if (!hasElevatedPrivileges) throw new ForbiddenException('Operation denied');
 
-    if (request.userId && await this.isUserARoomMember(request.userId, request.roomId)) throw new ConflictException('The specified user is already a member of the room specified');
-    const [url, inviteId] = await this.updatesService.createInvite(request, memberDoc._id.toString());
-    if (request.userId) {
-      const room = await this.model.findById(request.roomId);
-      const invitor = await this.userService.findByIdInternalAsync(invitorId);
+        if (request.userId && await this.isUserARoomMember(request.userId, request.roomId)) throw new ConflictException('The specified user is already a member of the room specified');
+        const [url, inviteId] = await this.updatesService.createInvite(request, memberDoc._id.toString(), session);
+        if (request.userId) {
+          const room = await this.model.findById(request.roomId);
+          const invitor = await this.userService.findByIdInternalAsync(invitorId);
 
-      await new this.memberModel({
-        isBanned: false,
-        pending: true,
-        roomId: request.roomId,
-        userId: request.userId,
-        inviteId,
-        role: 'guest'
-      }).save();
+          await new this.memberModel({
+            isBanned: false,
+            pending: true,
+            roomId: request.roomId,
+            userId: request.userId,
+            inviteId,
+            role: 'guest'
+          }).save({ session });
 
-      this.updatesService.createNotification({
-        body: `${invitor.name} invites you to join them in ${room.name} as a guest`,
-        sender: invitorId,
-        title: 'Invitation',
-        image: invitor.avatar,
-        to: request.userId,
-        data: {
-          url
+          this.updatesService.createNotification({
+            body: `${invitor.name} invites you to join them in ${room.name} as a guest`,
+            sender: invitorId,
+            title: 'Invitation',
+            image: invitor.avatar,
+            to: request.userId,
+            data: {
+              url
+            }
+          }, session);
         }
+        return url;
       });
+      await session.commitTransaction();
+      return ans;
+    } catch (err) {
+      await session.abortTransaction()
+      throw err
+    } finally {
+      await session.endSession()
     }
-    return url;
   }
 
   async findSessionById(sessionId: string) {
@@ -335,7 +350,6 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const transportId = computeTransportTrackingId(sessionDoc.userId, id);
     const transport = this.webRtcTransports[transportId];
     transport?.close();
-    delete this.webRtcTransports[transportId];
     await sessionDoc.updateOne({
       $inc: { __v: 1 },
       $set: {
@@ -412,7 +426,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     const roomDoc = await this.model.findById(roomId).exec();
 
     if (!membership || !roomDoc) throw new NotFoundException('Room not found');
-    if (membership.isBanned) throw new ForbiddenException(ROOM_ACCESS_DENIED);
+    if (membership.isBanned || membership.pending) throw new ForbiddenException(ROOM_ACCESS_DENIED);
 
     return new Room(roomDoc.toObject());
   }
@@ -443,28 +457,37 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
 
   async createRoom(name: string, userId: string) {
     const dbSession = await this.model.startSession();
+    try {
+      const ans = await dbSession
+        .withTransaction(async () => {
+          const roomModel = new this.model({
+            name,
+            members: [],
+          });
 
-    return await dbSession
-      .withTransaction(async () => {
-        const roomModel = new this.model({
-          name,
-          members: [],
-        });
+          const memberModel = new this.memberModel({
+            userId,
+            isBanned: false,
+            pending: false,
+            roomId: roomModel,
+            role: 'owner',
+          });
 
-        const memberModel = new this.memberModel({
-          userId,
-          isBanned: false,
-          pending: false,
-          roomId: roomModel,
-          role: 'owner',
-        });
+          roomModel.set({ members: [memberModel] });
+          // const ans = await Promise.all([memberModel.save(), roomModel.save()])
+          // await dbSession.commitTransaction();
 
-        roomModel.set({ members: [memberModel] });
-        const ans = await Promise.all([memberModel.save(), roomModel.save()])
-        // await dbSession.commitTransaction();
-        return ans;
-      })
-      .then(([member]) => member);
+          return [await memberModel.save({ session: dbSession }), await roomModel.save({ session: dbSession })];
+        })
+        .then(([member]) => member);
+      await dbSession.commitTransaction();
+      return ans;
+    } catch (err) {
+      await dbSession.abortTransaction();
+      throw err
+    } finally {
+      await dbSession.endSession();
+    }
   }
 
   onApplicationBootstrap() {
@@ -475,8 +498,8 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
           forkJoin([
             createWorker({
               logLevel: 'debug',
-              rtcMaxPort: 50000,
-              rtcMinPort: 40000,
+              rtcMaxPort: this.configService.getOrThrow<number>('RTC_MAX_PORT'),
+              rtcMinPort: this.configService.getOrThrow<number>('RTC_MIN_PORT'),
               dtlsCertificateFile: this.configService.get<string>('DTLS_CERT_PATH'),
               dtlsPrivateKeyFile: this.configService.get<string>('DTLS_PRIVATE_KEY'),
             }),
@@ -489,7 +512,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
                   {
                     ip: '0.0.0.0',
                     announcedAddress: ip,
-                    protocol: 'udp',
+                    protocol: this.configService.get<TransportProtocol>('TRANSPORT_PROTOCOL', 'udp'),
                   },
                 ],
               }),
@@ -550,9 +573,11 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
                 this.logger.debug(
                   `Transport::${transport.id} closed on router::${router.id}`
                 );
+                delete this.webRtcTransports[transport.appData.trackingId as string];
               });
 
               transport.observer.on('newproducer', async (producer) => {
+                console.count('newproducer');
                 this.logger.debug(
                   `New Producer::${producer.id} on transport::${transport.id}`
                 );
@@ -577,7 +602,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
 
               transport.observer.on('newconsumer', (consumer) => {
                 this.logger.debug(
-                  `New Consumer::${consumer.id} on transport::${transport.id}`
+                  `New Consumer::${consumer.id} on transport::${transport.id}, consuming producer::${consumer.producerId}`
                 );
 
                 consumer.observer.on('close', () => {
@@ -597,25 +622,22 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
         },
       });
 
-    this.logger.debug('Resolving IP address...');
-    from(Object.values(networkInterfaces())).pipe(
-      mergeMap(identity),
-      first(({ family, internal }) => family == 'IPv4' && !internal),
-    ).subscribe(({ address }) => {
-      ip = address;
-      this.logger.log(`IP Address resolved to: ${ip}`);
-    });
-
-    fromEvent(this.updatesService.observer, Events.InvitationAccepted).subscribe(({ inviteId, roomId, userId, targeted }: InvitationEventData) => {
-      this.approveMembership(inviteId, userId, roomId, targeted);
-    });
-
-    fromEvent(this.updatesService.observer, Events.InvitationDenied).subscribe(({ inviteId, roomId, userId, targeted }: InvitationEventData) => {
-      this.removePendingMembership(inviteId, userId, roomId);
-    });
+    if (this.configService.get<string>('NODE_ENV') === 'development') {
+      this.logger.debug('Resolving IP address...');
+      from(Object.values(networkInterfaces())).pipe(
+        mergeMap(identity),
+        first(({ family, internal }) => family == 'IPv4' && !internal),
+      ).subscribe(({ address }) => {
+        ip = address;
+        this.logger.log(`IP Address resolved to: ${ip}`);
+      });
+    } else {
+      ip = this.configService.getOrThrow<string>('ANNOUNCED_IP');
+    }
   }
 
-  async removePendingMembership(inviteId: string, userId: string, roomId: string) {
+  @OnEvent(Events.InvitationDenied)
+  async removePendingMembership({ inviteId, roomId, userId }: InvitationEventData) {
     const result = await this.memberModel.deleteOne({
       pending: { $ne: false },
       userId,
@@ -627,60 +649,68 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     else this.logger.debug(`Pending membership for user: ${userId} in room: ${roomId} was removed succesfully`);
   }
 
-  async approveMembership(inviteId: string, userId: string, roomId: string, targeted: boolean) {
+  @OnEvent(Events.InvitationAccepted)
+  async approveMembership({ inviteId, roomId, userId, targeted }: InvitationEventData) {
+    const dbSession = await this.model.db.startSession();
     try {
-      let membership: HydratedDocument<RoomMembership>;
-      if (targeted) {
-        membership = await this.memberModel.findOne({
-          userId,
-          inviteId,
-          isBanned: { $ne: true },
-          pending: { $ne: false },
-          roomId
-        }).exec();
-
-        if (!membership) {
-          this.logger.warn(`Could not approve membership of user: ${userId} into room: ${roomId}`);
-          return;
-        }
-
-        membership.pending = false;
-        await membership.save();
-      } else {
-        membership = await this.memberModel.findOne({
-          userId,
-          isBanned: { $ne: true },
-          pending: { $ne: false },
-          roomId
-        }).exec();
-
-        if (!membership) {
-          membership = await new this.memberModel({
-            isBanned: false,
-            pending: false,
-            roomId: roomId,
-            userId: userId,
+      await dbSession.withTransaction(async () => {
+        let membership: HydratedDocument<RoomMembership>;
+        if (targeted) {
+          membership = await this.memberModel.findOne({
+            userId,
             inviteId,
-            role: 'guest'
-          }).save();
-        } else {
-          await membership.set({
-            inviteId, pending: false
-          }).save();
-        }
-      }
-      this.logger.debug(`Membership for user: ${userId} has been approved`);
+            isBanned: { $ne: true },
+            pending: { $ne: false },
+            roomId
+          }).exec();
 
-      await this.model.findByIdAndUpdate(roomId, {
-        $push: {
-          members: membership
-        },
-        $inc: {
-          __v: 1
+          if (!membership) {
+            this.logger.warn(`Could not approve membership of user: ${userId} into room: ${roomId}`);
+            return;
+          }
+
+          membership.pending = false;
+          await membership.save();
+        } else {
+          membership = await this.memberModel.findOne({
+            userId,
+            isBanned: { $ne: true },
+            pending: { $ne: false },
+            roomId
+          }).exec();
+
+          if (!membership) {
+            membership = await new this.memberModel({
+              isBanned: false,
+              pending: false,
+              roomId: roomId,
+              userId: userId,
+              inviteId,
+              role: 'guest'
+            }).save({ session: dbSession });
+          } else {
+            await membership.set({
+              inviteId, pending: false
+            }).save({ session: dbSession });
+          }
         }
+        this.logger.debug(`Membership for user: ${userId} has been approved`);
+
+        await this.model.findByIdAndUpdate(roomId, {
+          $push: {
+            members: membership
+          },
+          $inc: {
+            __v: 1
+          }
+        }, { session: dbSession });
       });
+      await dbSession.commitTransaction();
     } catch (err) {
       this.logger.error(err.message, err.stack);
+      await dbSession.abortTransaction();
+    } finally {
+      await dbSession.endSession();
     }
   }
 
@@ -707,8 +737,8 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
     producer.close();
   }
 
-  private async userHasElevatedPrivileges(member?: string | HydratedDocument<RoomMembership>) {
-    const memberDoc = typeof member == 'string' ? await this.memberModel.findById(member) : member;
+  private async userHasElevatedPrivileges(member?: string | HydratedDocument<RoomMembership>, dbSession?: ClientSession) {
+    const memberDoc = typeof member == 'string' ? await this.memberModel.findById(member, undefined, { session: dbSession }) : member;
     if (!memberDoc) return false;
 
     return !memberDoc.isBanned && (memberDoc.role == 'owner' || memberDoc.role == 'moderator');
@@ -865,6 +895,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
         enableUdp: true,
       });
       this.webRtcTransports[id] = transport;
+      transport.appData.trackingId = id;
     }
 
     return [router, transport];
@@ -974,9 +1005,7 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
   async endUserPresentations(userId: string, presentationId: string) {
     const transportId = computeTransportTrackingId(userId, presentationId);
     const transport = this.webRtcTransports[transportId];
-    if (transport) {
-      transport.close();
-    }
+    transport?.close();
 
     const presentation = await this.presentationModel.findByIdAndUpdate(presentationId, {
       $currentDate: {
@@ -986,8 +1015,6 @@ export class RoomService implements OnApplicationBootstrap, OnApplicationShutdow
         __v: 1
       }
     }).exec();
-    console.log(presentation);
-
     if (!presentation) {
       this.logger.warn(`Could not end presentation: ${presentationId} because it does not exist`);
       return;
