@@ -104,6 +104,13 @@
         "build"
       ],
       "command": "docker build -f apps/web-client/Dockerfile . -t brinestone/chattr-web-client:1.1"
+    },
+
+    "push_docker": {
+      "dependsOn": [
+        "docker-build"
+      ],
+      "command": "docker push brinestone/"
     }
   }
 }
