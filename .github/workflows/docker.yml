@@ -29,4 +29,4 @@ jobs:
       - uses: nrwl/nx-set-shas@v4
 
       - run: yarn nx-cloud record -- nx format:check
-      - run: yarn nx affected -t docker-push
+      - run: yarn nx affected -t docker-push --head=$NX_HEAD --base=$NX_BASE

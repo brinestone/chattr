@@ -70,6 +70,8 @@
     "@angular/language-service": "18.1.2",
     "@nestjs/schematics": "^10.0.1",
     "@nestjs/testing": "^10.0.2",
+    "@nx-tools/container-metadata": "6.1.0",
+    "@nx-tools/nx-container": "6.1.0",
     "@nx/angular": "19.5.3",
     "@nx/cypress": "19.5.3",
     "@nx/eslint": "19.5.3",
