@@ -21,7 +21,7 @@ verbose=False
 isFirstTime=True
 forceMode=True # TODO: set to False in production
 state={}
-version='1.0.1'
+version='1.0.3'
 
 DROPDIR_KEY_NAME="dropdir"
 ANNOUNCED_IP_KEY_NAME="ip"
