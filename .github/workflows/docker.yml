@@ -1,8 +1,12 @@
 name: Docker Push
 
 on:
-  release:
-    type: [released]
+  push:
+    tags:
+      - v*
+    paths:
+      - apps/**/*.{ts,html,scss,css}
+      - libs/**/*.{ts}
 
 permissions:
   actions: read
@@ -11,6 +15,8 @@ permissions:
 jobs:
   main:
     runs-on: ubuntu-latest
+    env:
+      CHATTR_VERSION: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,4 +35,9 @@ jobs:
       - uses: nrwl/nx-set-shas@v4
 
       - run: yarn nx-cloud record -- nx format:check
+      - name: Docker login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
       - run: yarn nx affected -t docker-push --head=$NX_HEAD --base=$NX_BASE

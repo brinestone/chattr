@@ -1,5 +1,4 @@
 import re
-import math
 from os import path
 from os import environ
 from pathlib import Path
@@ -22,6 +21,7 @@ verbose=False
 isFirstTime=True
 forceMode=True # TODO: set to False in production
 state={}
+version='1.0'
 
 DROPDIR_KEY_NAME="dropdir"
 ANNOUNCED_IP_KEY_NAME="ip"
@@ -277,7 +277,7 @@ services:
     networks:
       - backend
       - api
-    image: docker.io/brinestone/chattr-server:1.0
+    image: docker.io/brinestone/chattr-server:{version}
     environment:
       - SERVER_PORT=@@{API_PORT}
       - JWT_KEY=@@{SESSION_KEY_KEY_NAME}
@@ -300,7 +300,7 @@ services:
     networks:
       - frontend
       - api
-    image: brinestone/chattr-web-client:1.1
+    image: brinestone/chattr-web-client:{version}
     ports:
       - '@@{SERVER_PORT}:80'
     volumes:
