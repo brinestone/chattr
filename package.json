@@ -1,6 +1,6 @@
 {
   "name": "@chattr/source",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "license": "MIT",
   "scripts": {
     "start:web-client": "npx nx run web-client:serve:development --ssl",
