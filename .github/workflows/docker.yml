@@ -29,15 +29,15 @@ jobs:
       # Cache node_modules
       - uses: actions/setup-node@v3
         with:
-          node-version: 20
-          cache: 'yarn'
-      - run: yarn install --frozen-lockfile
+          node-version-file: package.json
+      - run: npm install -g pnpm
+      - run: pnpm i --frozen-lockfile
       - uses: nrwl/nx-set-shas@v4
 
-      - run: yarn nx-cloud record -- nx format:check
+      - run: pnpm nx-cloud record -- nx format:check
       - name: Docker login
         uses: docker/login-action@v3
         with:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
-      - run: yarn nx affected -t docker-push --head=$NX_HEAD --base=$NX_BASE
+      - run: pnpm nx affected -t docker-push --head=$NX_HEAD --base=$NX_BASE
