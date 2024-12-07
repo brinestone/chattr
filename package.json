@@ -2,6 +2,9 @@
   "name": "@chattr/source",
   "version": "1.0.0",
   "license": "MIT",
+  "engines": {
+    "node": ">= 22.9"
+  },
   "scripts": {
     "start:web-client": "npx nx run web-client:serve:development --ssl",
     "start:server": "npx nx run server:serve:development --verbose --inspect",

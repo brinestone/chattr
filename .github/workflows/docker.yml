@@ -16,7 +16,7 @@ jobs:
   main:
     runs-on: ubuntu-latest
     env:
-      CHATTR_VERSION: ${{ github.ref_name }}
+      CHATTR_VERSION: '1.0.1'
     steps:
       - uses: actions/checkout@v4
         with:
