@@ -31,13 +31,13 @@
       "dependsOn": [
         "build"
       ],
-      "command": "docker build -f apps/server/Dockerfile . -t \"briestone/chattr-server:$(CHATTR_VERSION)\""
+      "command": "docker build -f apps/server/Dockerfile . -t \"briestone/chattr-server:1.0.4\""
     },
     "docker-push": {
       "dependsOn": [
         "docker-build"
       ],
-      "command": "docker push -f apps/server/Dockerfile . -t \"briestone/chattr-server:$(CHATTR_VERSION)\""
+      "command": "docker push -f apps/server/Dockerfile . -t \"briestone/chattr-server:1.0.4\""
     }
   }
 }

@@ -16,7 +16,7 @@ jobs:
   main:
     runs-on: ubuntu-latest
     env:
-      CHATTR_VERSION: '1.0.3'
+      CHATTR_VERSION: '1.0.4'
     steps:
       - uses: actions/checkout@v4
         with:
