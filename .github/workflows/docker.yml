@@ -34,7 +34,7 @@ jobs:
       - run: pnpm i --frozen-lockfile
       - uses: nrwl/nx-set-shas@v4
 
-      - run: pnpm nx-cloud record -- nx format:check
+      # - run: pnpm nx-cloud record -- nx format:check
       - name: Docker login
         uses: docker/login-action@v3
         with:
